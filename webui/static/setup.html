@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>初始化 · PE31625G24DIRA 交换机管理</title>
+  <script src="/theme.js"></script>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body class="login-page">
+  <main class="login-shell">
+    <section class="login-card" aria-labelledby="setup-title">
+      <div class="login-brand"><div><strong id="device-model">PE31625G24DIRA</strong><small>交换机管理</small></div></div>
+      <div class="login-copy">
+        <h1 id="setup-title">初始化管理账户</h1>
+        <p>此页面仅在首次初始化前开放。</p>
+      </div>
+      <form id="setup-form" novalidate>
+        <label for="username">用户名</label>
+        <input id="username" name="username" autocomplete="username" minlength="3" maxlength="64" pattern="[A-Za-z0-9_.-]{3,64}" required autofocus>
+        <label for="password">密码</label>
+        <input id="password" name="password" type="password" autocomplete="new-password" minlength="8" maxlength="256" required>
+        <label for="confirm-password">确认密码</label>
+        <input id="confirm-password" name="confirmPassword" type="password" autocomplete="new-password" minlength="8" maxlength="256" required>
+        <p id="setup-error" class="login-error" role="alert" hidden></p>
+        <button id="setup-submit" class="button primary login-submit" type="submit">创建账户</button>
+      </form>
+    </section>
+  </main>
+  <script src="/setup.js"></script>
+</body>
+</html>

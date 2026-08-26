@@ -1,0 +1,414 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>PE31625G24DIRA 交换机管理</title>
+  <script src="/theme.js"></script>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand"><div><strong>PE31625G24DIRA</strong><small>交换机管理</small></div></div>
+      <nav class="classic-nav" aria-label="主导航">
+        <div class="nav-group open active">
+          <button class="nav-group-toggle" type="button" aria-expanded="true"><svg class="app-icon" aria-hidden="true" viewBox="0 0 24 24"><path d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2"/></svg><span>状态</span><svg class="app-icon nav-chevron" aria-hidden="true" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></button>
+          <div class="nav-children">
+            <button class="nav-item active" data-page="overview" type="button">概览</button>
+            <button class="nav-item" data-page="hardware" type="button">硬件</button>
+            <button class="nav-item" data-page="logs" type="button">日志</button>
+          </div>
+        </div>
+        <div class="nav-group">
+          <button class="nav-group-toggle" type="button" aria-expanded="false"><svg class="app-icon" aria-hidden="true" viewBox="0 0 24 24"><path d="M8 3 4 7l4 4"/><path d="M4 7h16"/><path d="m16 21 4-4-4-4"/><path d="M20 17H4"/></svg><span>交换</span><svg class="app-icon nav-chevron" aria-hidden="true" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></button>
+          <div class="nav-children">
+            <button class="nav-item" data-page="ports" type="button">端口</button>
+            <button class="nav-item" data-page="vlans" type="button">VLAN</button>
+            <button class="nav-item" data-page="network" type="button">网络功能</button>
+          </div>
+        </div>
+        <div class="nav-group">
+          <button class="nav-group-toggle" type="button" aria-expanded="false"><svg class="app-icon" aria-hidden="true" viewBox="0 0 24 24"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.38a2 2 0 0 0-.73-2.73l-.15-.09a2 2 0 0 1-1-1.74v-.51a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg><span>系统</span><svg class="app-icon nav-chevron" aria-hidden="true" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></button>
+          <div class="nav-children">
+            <button class="nav-item" data-page="maintenance" type="button">备份与升级</button>
+            <button class="nav-item" data-page="settings" type="button">设置</button>
+          </div>
+        </div>
+      </nav>
+      <div class="sidebar-bottom">
+        <div class="sidebar-foot"><span id="service-dot" class="status-dot"></span><div><strong id="service-text">正在连接</strong><small id="version-text">—</small></div></div>
+      </div>
+    </aside>
+
+    <div class="workspace">
+      <header class="topbar">
+        <div class="topbar-title"><h1 id="top-page-title">概览</h1></div>
+        <div class="top-actions"><button id="system-power" class="icon-button power-button" type="button" aria-label="电源操作" title="电源操作"><svg class="app-icon lucide-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2v10"/><path d="M18.4 6.6a9 9 0 1 1-12.77.04"/></svg></button><button id="logout" class="button quiet" type="button">退出</button></div>
+      </header>
+
+      <main>
+        <section class="page-heading"><h1 id="page-title">概览</h1></section>
+        <section id="page-overview" class="page active">
+          <div class="health-grid">
+            <article class="health-card"><span class="health-icon purple"><svg class="app-icon" aria-hidden="true" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M11 9h4a2 2 0 0 0 2-2V3"/><circle cx="9" cy="9" r="2"/><path d="M7 21v-4a2 2 0 0 1 2-2h4"/><circle cx="15" cy="15" r="2"/></svg></span><div><small>FM10840</small><strong id="switch-load">—</strong><span id="switch-load-note">转发负载</span></div></article>
+            <article class="health-card"><span class="health-icon blue"><svg class="app-icon" aria-hidden="true" viewBox="0 0 24 24"><path d="M7 2v2m5-2v2m5-2v2M7 20v2m5-2v2m5-2v2M2 7h2m-2 5h2m-2 5h2m16-10h2m-2 5h2m-2 5h2"/><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="8" y="8" width="8" height="8" rx="1"/></svg></span><div><small>CPU</small><strong id="cpu-usage">—</strong><span id="cpu-note">正在采样</span></div></article>
+            <article class="health-card"><span class="health-icon green"><svg class="app-icon" aria-hidden="true" viewBox="0 0 24 24"><path d="M12 12v-2m0 8v-2m4-4v-2m0 8v-2M2 11h1.5M20 18v-2m.5-5H22M4 18v-2m4-4v-2m0 8v-2"/><rect x="2" y="6" width="20" height="10" rx="2"/></svg></span><div><small>内存</small><strong id="memory-usage">—</strong><span id="memory-note">—</span></div></article>
+            <article class="health-card"><span class="health-icon cyan"><svg class="app-icon" aria-hidden="true" viewBox="0 0 24 24"><path d="M6 8v1m4-1v1m4-1v1m4-1v1"/><path d="M19 17a2 2 0 0 0-1.765 1.059l-.47.882A2 2 0 0 1 15 20H9a2 2 0 0 1-1.765-1.059l-.47-.882A2 2 0 0 0 5 17H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2z"/></svg></span><div><small>管理口</small><strong id="mgmt-state">—</strong><span id="mgmt-ip">—</span></div></article>
+          </div>
+
+          <div class="two-column">
+            <div class="overview-side-stack">
+              <section class="panel">
+                <div class="panel-head"><h2>系统</h2></div>
+                <dl class="info-list">
+                  <div><dt>型号</dt><dd id="hardware-model">—</dd></div>
+                  <div><dt>硬件版本</dt><dd id="hardware-version">—</dd></div>
+                  <div><dt>平台配置</dt><dd id="hardware-platform">—</dd></div>
+                  <div><dt>序列号</dt><dd id="hardware-serial">—</dd></div>
+                  <div><dt>主机名</dt><dd id="hostname">—</dd></div>
+                  <div><dt>运行时间</dt><dd id="uptime">—</dd></div>
+                  <div><dt>CPU 型号</dt><dd id="cpu-model">—</dd></div>
+                  <div><dt>CPU 使用率</dt><dd id="system-cpu-usage">—</dd></div>
+                  <div><dt>平均负载</dt><dd id="cpu-load">—</dd></div>
+                  <div><dt>内核</dt><dd id="kernel">—</dd></div>
+                </dl>
+              </section>
+              <section class="panel">
+                <div class="panel-head"><h2>温度</h2></div>
+                <div class="temperature-summary">
+                  <div><small>FM10840</small><strong id="overview-switch-temp">—</strong></div>
+                  <div><small>CPU</small><strong id="overview-cpu-temp">—</strong></div>
+                </div>
+              </section>
+              <section class="panel switch-traffic-panel">
+                <div class="panel-head"><h2>端口收发汇总</h2><span id="switch-traffic-source" class="soft-pill">—</span></div>
+                <div class="traffic-row switch-traffic-row"><div><small>接收速率</small><strong id="switch-rx-rate">—</strong><span id="switch-rx-total">—</span></div><div><small>发送速率</small><strong id="switch-tx-rate">—</strong><span id="switch-tx-total">—</span></div></div>
+              </section>
+            </div>
+            <div class="overview-side-stack">
+              <section class="panel">
+                <div class="panel-head"><h2>管理口</h2></div>
+                <div id="management-grid" class="management-grid"><span class="muted">正在读取…</span></div>
+              </section>
+              <section class="panel">
+                <div class="panel-head"><h2>活动端口</h2><span id="active-port-count" class="soft-pill">—</span></div>
+                <div id="active-port-list" class="active-port-list"><span class="muted">正在读取…</span></div>
+              </section>
+            </div>
+          </div>
+        </section>
+
+        <section id="page-logs" class="page">
+          <nav class="page-tabs log-tabs" aria-label="日志来源">
+            <button class="active" type="button" data-log-source="system">系统日志</button>
+            <button type="button" data-log-source="kernel">内核日志</button>
+            <button type="button" data-log-source="switch">交换服务</button>
+          </nav>
+          <section class="panel log-panel">
+            <div class="panel-head"><h2 id="log-title">系统日志</h2><div class="panel-tools"><span id="log-meta" class="link">—</span><button id="log-refresh" class="button secondary compact" type="button">刷新</button></div></div>
+            <textarea id="log-content" class="log-content" readonly wrap="off" spellcheck="false">选择日志后读取。</textarea>
+          </section>
+        </section>
+
+        <section id="page-hardware" class="page">
+          <section class="panel">
+            <div class="panel-head"><h2>主机传感器</h2></div>
+            <div class="host-sensor-groups">
+              <div class="sensor-category">
+                <div class="sensor-category-head"><strong>CPU DTS</strong></div>
+                <div id="cpu-core-sensors" class="sensor-list"><span class="muted">正在读取…</span></div>
+              </div>
+              <div class="sensor-category">
+                <div class="sensor-category-head"><strong>SoC DTS</strong></div>
+                <div id="soc-sensors" class="sensor-list"><span class="muted">正在读取…</span></div>
+              </div>
+              <div class="sensor-category">
+                <div class="sensor-category-head"><strong>ACPI Thermal Zone</strong></div>
+                <div id="acpi-sensors" class="sensor-list"><span class="muted">正在读取…</span></div>
+              </div>
+              <div id="board-sensor-category" class="sensor-category" hidden>
+                <div class="sensor-category-head"><strong>其他 hwmon</strong></div>
+                <div id="board-sensors" class="sensor-list"></div>
+              </div>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-head"><h2>Intel FM10840</h2><div class="panel-tools"><span id="sensor-age" class="link">—</span><button id="refresh-all" class="button secondary compact" type="button">刷新</button></div></div>
+            <div class="hardware-columns">
+              <section class="monitor-group">
+                <h3 class="subhead">芯片温度</h3>
+                <div id="switch-sensors" class="sensor-list"><span class="muted">读取中…</span></div>
+              </section>
+              <section class="monitor-group">
+                <h3 class="subhead">电压</h3>
+                <div id="voltage-sensors" class="sensor-list"></div>
+              </section>
+            </div>
+            <section class="monitor-group">
+              <h3 class="subhead">风扇</h3>
+              <div id="fan-sensors" class="sensor-list"><span class="muted">正在检查风扇转速…</span></div>
+            </section>
+          </section>
+
+          <section class="panel fan-settings-panel">
+            <div class="panel-head"><h2>风扇曲线</h2></div>
+            <form id="fan-form" class="fan-form" novalidate>
+              <div class="fan-trigger-grid">
+                <label>闲置温度<span><input id="fan-idle-temperature" type="number" min="10" max="80" step="1" required> °C</span></label>
+                <label>负载温度<span><input id="fan-load-temperature" type="number" min="20" max="100" step="1" required> °C</span></label>
+                <label>闲置转速<span><input id="fan-idle-speed" type="number" min="0" max="100" step="1" required> %</span></label>
+                <label>负载转速<span><input id="fan-load-speed" type="number" min="0" max="100" step="1" required> %</span></label>
+                <label>临界温度<span><input id="fan-critical-temperature" type="number" min="30" max="120" step="1" required> °C</span></label>
+                <label>全范围响应时间<select id="fan-response-time"><option value="5.45">快速 · 5.45 秒</option><option value="10.9">标准 · 10.9 秒</option><option value="21.6">平缓 · 21.6 秒</option><option value="43.7">静音 · 43.7 秒</option></select></label>
+              </div>
+              <div class="fan-preview">
+                <span id="fan-preview-idle"></span><i></i><span id="fan-preview-load"></span><i class="critical"></i><span id="fan-preview-critical"></span>
+              </div>
+              <div class="fan-curve-actions">
+                <button id="fan-apply" class="button primary" type="submit">应用风扇曲线</button>
+              </div>
+            </form>
+          </section>
+
+          <section class="panel diagnostic-panel">
+            <div class="panel-head"><h2>光引擎诊断</h2><button id="optics-read" class="button secondary" type="button">读取</button></div>
+            <div id="optics-result" class="diagnostic-empty">尚未读取</div>
+          </section>
+
+        </section>
+
+        <section id="page-stats" class="page">
+          <nav class="page-tabs" aria-label="端口视图">
+            <button type="button" data-page-link="ports">拓扑与速率</button>
+            <button class="active" type="button" data-page-link="stats">端口统计</button>
+          </nav>
+          <section class="stats-summary">
+            <article><small>接收单播</small><strong id="stat-rx-unicast">—</strong></article>
+            <article><small>发送单播</small><strong id="stat-tx-unicast">—</strong></article>
+            <article><small>接收字节</small><strong id="stat-rx-bytes">—</strong></article>
+            <article><small>发送字节</small><strong id="stat-tx-bytes">—</strong></article>
+            <article><small>接收错误</small><strong id="stat-rx-errors">—</strong></article>
+            <article><small>发送丢弃</small><strong id="stat-tx-discards">—</strong></article>
+          </section>
+          <section class="panel">
+            <div class="panel-head stats-toolbar"><h2>RMON</h2><label>端口<select id="stats-port"></select></label></div>
+            <div class="stats-section"><h3>接收</h3><div id="stats-rx" class="stat-list"></div></div>
+            <div class="stats-section"><h3>发送</h3><div id="stats-tx" class="stat-list"></div></div>
+            <div class="stats-section"><h3>帧长分布</h3><div class="length-columns"><div><h4>接收</h4><div id="stats-rx-length" class="stat-list compact"></div></div><div><h4>发送</h4><div id="stats-tx-length" class="stat-list compact"></div></div></div></div>
+            <div class="stats-section"><h3>错误 / 丢弃</h3><div id="stats-errors" class="stat-list"></div></div>
+          </section>
+          <section class="panel diagnostic-panel">
+            <div class="panel-head"><h2>Lane 诊断</h2><button id="lane-diagnostic-read" class="button secondary" type="button">开始诊断</button></div>
+            <div id="lane-diagnostic-result" class="diagnostic-empty">尚未诊断</div>
+          </section>
+        </section>
+
+        <section id="page-ports" class="page">
+          <nav class="page-tabs" aria-label="端口视图">
+            <button class="active" type="button" data-page-link="ports">拓扑与速率</button>
+            <button type="button" data-page-link="stats">端口统计</button>
+          </nav>
+          <section class="summary-strip">
+            <div><small>逻辑端口</small><strong id="port-count">—</strong></div><div><small>外部带宽</small><strong id="external-budget">—</strong></div><div><small>总带宽</small><strong id="total-budget">—</strong></div>
+            <div class="budget"><span><small>600G 预算</small><b id="budget-label">—</b></span><div><i id="budget-bar"></i></div></div>
+          </section>
+          <section class="panel">
+            <div class="panel-head mpo-head"><div><h2>MPO24-1</h2><p>EPL 0 / 1 / 2</p></div><div class="mpo-admin"><span id="mpo1-admin-label">—</span><button id="mpo1-admin" class="toggle-switch large" type="button" role="switch" aria-checked="true" aria-label="MPO24-1 总开关"><i></i></button></div></div>
+            <div id="mpo1-grid" class="group-grid"></div>
+          </section>
+          <section class="panel">
+            <div class="panel-head mpo-head"><div><h2>MPO24-2</h2><p>EPL 5 / 6 / 7</p></div><div class="mpo-admin"><span id="mpo2-admin-label">—</span><button id="mpo2-admin" class="toggle-switch large" type="button" role="switch" aria-checked="true" aria-label="MPO24-2 总开关"><i></i></button></div></div>
+            <div id="mpo2-grid" class="group-grid"></div>
+          </section>
+          <section class="panel port-label-panel">
+            <div class="panel-head"><h2>端口名称</h2><button id="apply-port-labels" class="button secondary" type="button">保存</button></div>
+            <div id="port-label-list" class="port-label-list"></div>
+          </section>
+          <section id="topology-preview" class="panel topology-preview" hidden>
+            <div class="panel-head"><div><h2>变更预览</h2><p id="topology-preview-summary"></p></div><span class="soft-pill">尚未应用</span></div>
+            <div id="topology-preview-list" class="preview-list"></div>
+            <p id="topology-preview-warning" class="disruption-warning"></p>
+            <div class="preview-actions"><button id="topology-preview-cancel" class="button quiet" type="button">取消</button><button id="topology-preview-confirm" class="button primary" type="button">确认并应用</button></div>
+          </section>
+          <section id="topology-apply-row" class="apply-row"><div><strong id="topology-change-count">无待应用修改</strong><span id="topology-disruption-hint" hidden>变更的 EPL 会短暂断链</span></div><button id="apply-topology" class="button primary" disabled type="button">应用端口配置</button></section>
+        </section>
+
+        <section id="page-vlans" class="page">
+          <section class="panel">
+            <div class="panel-head"><h2>VLAN 列表</h2><button id="open-add-vlan" class="button secondary" type="button">添加 VLAN</button></div>
+            <div class="vlan-list-head" aria-hidden="true"><span>ID</span><span>名称</span><span>Native</span><span>Tagged</span><span>操作</span></div>
+            <div id="vlan-list" class="vlan-list"></div>
+          </section>
+          <section class="panel table-panel">
+            <div class="panel-head"><h2>端口 VLAN</h2></div>
+            <div class="table-scroll"><table class="vlan-matrix"><thead id="vlan-head"></thead><tbody id="vlan-body"></tbody></table></div>
+          </section>
+          <section id="vlan-preview" class="panel topology-preview" hidden>
+            <div class="panel-head"><div><h2>VLAN 变更预览</h2><p id="vlan-preview-summary"></p></div><span class="soft-pill">尚未应用</span></div>
+            <div id="vlan-preview-list" class="preview-list"></div>
+            <div class="preview-actions"><button id="vlan-preview-cancel" class="button quiet" type="button">取消</button><button id="vlan-preview-confirm" class="button primary" type="button">确认并应用</button></div>
+          </section>
+          <section id="vlan-apply-row" class="apply-row"><div><strong id="vlan-change-count">无待应用修改</strong><span>在线应用，不重启交换服务</span></div><button id="apply-vlans" class="button primary" disabled type="button">应用 VLAN</button></section>
+          <section class="panel diagnostic-panel">
+            <div class="panel-head"><h2>MAC 地址表</h2><button id="fdb-read" class="button secondary" type="button">读取</button></div>
+            <div id="fdb-result" class="diagnostic-empty">尚未读取</div>
+          </section>
+        </section>
+
+        <section id="page-network" class="page">
+          <div class="network-grid">
+            <section class="panel">
+              <div class="panel-head"><h2>网络保护</h2></div>
+              <div class="feature-list">
+                <div class="feature-row"><div><strong>环路保护</strong><span>持续检测到异常广播时关闭问题端口</span></div><button id="loop-protection-toggle" class="toggle-switch" type="button" role="switch" aria-checked="false"><i></i></button></div>
+                <label class="feature-field">触发阈值<input id="loop-protection-pps" type="number" min="1000" max="1000000" step="1000"><span>包/秒</span></label>
+                <div class="feature-row"><div><strong>风暴抑制</strong><span>限制广播、组播和未知单播占用的总带宽</span></div><button id="storm-control-toggle" class="toggle-switch" type="button" role="switch" aria-checked="false"><i></i></button></div>
+                <label class="feature-field">速率上限<input id="storm-control-rate" type="number" min="10000" max="122500" step="2500"><span>Kbit/s</span></label>
+              </div>
+            </section>
+            <section class="panel">
+              <div class="panel-head"><h2>端口镜像</h2></div>
+              <div class="mirror-form">
+                <div class="feature-row"><div><strong>启用镜像</strong><span>复制指定端口的流量给抓包设备</span></div><button id="mirror-toggle" class="toggle-switch" type="button" role="switch" aria-checked="false"><i></i></button></div>
+                <label>源端口<select id="mirror-source"></select></label>
+                <label>监控端口<select id="mirror-destination"></select></label>
+                <label>方向<select id="mirror-direction"><option value="both">接收和发送</option><option value="rx">仅接收</option><option value="tx">仅发送</option></select></label>
+              </div>
+            </section>
+          </div>
+          <section class="panel network-section">
+            <div class="panel-head"><h2>邻居设备</h2><button id="lldp-refresh" class="button secondary" type="button">刷新</button></div>
+            <div id="lldp-neighbors" class="diagnostic-empty">尚未发现支持 LLDP 的设备</div>
+          </section>
+          <section class="apply-row"><div><strong>网络功能</strong><span>保护和镜像配置在线生效</span></div><button id="apply-l2" class="button primary" type="button">应用配置</button></section>
+        </section>
+
+        <section id="page-settings" class="page">
+          <div class="settings-grid">
+            <section class="panel settings-panel">
+              <div class="panel-head"><h2>系统与界面</h2></div>
+              <form id="system-settings-form" class="settings-form system-settings-form" novalidate>
+                <label>主机名<input id="system-hostname" maxlength="63" pattern="[A-Za-z0-9][A-Za-z0-9.-]{0,62}" required></label>
+                <label>明暗模式<select id="theme-mode"><option value="system">跟随系统</option><option value="light">浅色</option><option value="dark">深色</option></select></label>
+                <label>流量单位<select id="traffic-unit"><option value="bits">bit/s</option><option value="bytes">B/s</option></select></label>
+                <div class="form-actions"><button id="system-settings-submit" class="button primary" type="submit">保存</button></div>
+              </form>
+            </section>
+            <section class="panel settings-panel">
+              <div class="panel-head"><h2>管理员账户</h2></div>
+              <form id="account-form" class="account-form" novalidate>
+                <label>用户名<input id="account-username" name="username" autocomplete="username" maxlength="64" pattern="[A-Za-z0-9_.-]{3,64}" required></label>
+                <label>当前密码<input id="account-current-password" name="current_password" type="password" autocomplete="current-password" maxlength="256" required></label>
+                <label>新密码<input id="account-new-password" name="new_password" type="password" autocomplete="new-password" minlength="8" maxlength="256" placeholder="留空则不修改"></label>
+                <label>确认新密码<input id="account-confirm-password" name="confirm_password" type="password" autocomplete="new-password" minlength="8" maxlength="256"></label>
+                <div class="form-actions"><button id="account-submit" class="button primary" type="submit">保存账户</button></div>
+              </form>
+            </section>
+          </div>
+        </section>
+
+        <section id="page-maintenance" class="page">
+          <section class="panel operation-panel">
+            <div class="operation-section">
+              <h2>备份</h2>
+              <div class="operation-actions"><button id="config-export" class="button primary" type="button">生成备份</button></div>
+            </div>
+            <div class="operation-section">
+              <h2>恢复</h2>
+              <div class="operation-actions"><label class="button secondary file-button" for="config-import-file">选择备份</label><input id="config-import-file" type="file" accept="application/json,.json" hidden><button id="config-import" class="button primary" type="button" disabled>恢复配置</button><button id="factory-reset" class="button danger" type="button">恢复默认配置</button></div>
+              <small id="config-import-name" class="settings-file-name">未选择文件</small>
+            </div>
+            <div class="operation-section">
+              <h2>更新</h2>
+              <div class="operation-actions"><button id="upgrade-latest" class="button secondary" type="button">在线检查</button><label class="button secondary file-button" for="upgrade-file">上传更新包</label><input id="upgrade-file" type="file" accept="application/gzip,.gz" hidden><button id="upgrade-apply" class="button primary" type="button" disabled>执行更新</button></div>
+              <div id="upgrade-package" class="upgrade-package" hidden>
+                <span><small>更新包</small><strong id="upgrade-file-name"></strong></span>
+                <span><small>版本</small><strong id="upgrade-version"></strong></span>
+                <span class="upgrade-hash"><small>SHA-256</small><code id="upgrade-sha256"></code></span>
+              </div>
+              <pre id="upgrade-result" class="operation-output" hidden></pre>
+            </div>
+          </section>
+        </section>
+
+      </main>
+    </div>
+  </div>
+
+  <div id="dialog" class="dialog" hidden role="status" aria-live="polite"><span class="spinner"></span><strong id="dialog-title">处理中</strong></div>
+  <div id="power-menu-modal" class="modal-backdrop" hidden>
+    <section class="confirm-modal power-menu-modal" role="dialog" aria-modal="true" aria-labelledby="power-menu-title">
+      <h2 id="power-menu-title">电源操作</h2>
+      <div class="power-action-list">
+        <button id="choose-reboot" class="power-action" type="button"><span class="power-action-icon"><svg class="lucide-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-7.7L3 7"/><path d="M3 3v4h4"/></svg></span><span><strong>重启</strong><small>重新启动系统和交换服务</small></span></button>
+        <button id="choose-poweroff" class="power-action danger" type="button"><span class="power-action-icon"><svg class="lucide-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2v10"/><path d="M18.4 6.6a9 9 0 1 1-12.77.04"/></svg></span><span><strong>关机</strong><small>安全关闭系统</small></span></button>
+      </div>
+      <div class="confirm-actions"><button id="power-menu-cancel" class="button quiet" type="button">取消</button></div>
+    </section>
+  </div>
+  <div id="add-vlan-modal" class="modal-backdrop" hidden>
+    <section class="confirm-modal vlan-add-modal" role="dialog" aria-modal="true" aria-labelledby="add-vlan-title">
+      <h2 id="add-vlan-title">添加 VLAN</h2>
+      <form id="add-vlan-form" class="vlan-add-form" novalidate>
+        <label><span>VLAN ID</span><small>2–4094</small><input id="new-vlan-id" type="number" min="2" max="4094" required></label>
+        <label><span>名称</span><small>1–32 个字符</small><input id="new-vlan-name" maxlength="32" required></label>
+        <div class="confirm-actions"><button id="add-vlan-cancel" class="button quiet" type="button">取消</button><button class="button primary" type="submit">添加</button></div>
+      </form>
+    </section>
+  </div>
+  <div id="vlan-tagged-modal" class="modal-backdrop" hidden>
+    <section class="confirm-modal vlan-tagged-modal" role="dialog" aria-modal="true" aria-labelledby="vlan-tagged-title">
+      <h2 id="vlan-tagged-title">Tagged VLAN</h2>
+      <div id="vlan-tagged-list" class="vlan-tagged-list"></div>
+      <div class="confirm-actions"><button id="vlan-tagged-cancel" class="button quiet" type="button">取消</button><button id="vlan-tagged-save" class="button primary" type="button">保存</button></div>
+    </section>
+  </div>
+  <div id="port-admin-modal" class="modal-backdrop" hidden>
+    <section class="confirm-modal" role="dialog" aria-modal="true" aria-labelledby="port-admin-title" aria-describedby="port-admin-description">
+      <h2 id="port-admin-title">关闭端口？</h2>
+      <p id="port-admin-description"></p>
+      <div class="confirm-actions"><button id="port-admin-cancel" class="button quiet" type="button">取消</button><button id="port-admin-submit" class="button danger solid" type="button">确认关闭</button></div>
+    </section>
+  </div>
+  <div id="poweroff-modal" class="modal-backdrop" hidden>
+    <section class="confirm-modal" role="dialog" aria-modal="true" aria-labelledby="poweroff-title" aria-describedby="poweroff-description">
+      <div id="poweroff-confirm-content">
+        <h2 id="poweroff-title">关闭系统</h2>
+        <p id="poweroff-description">页面断开后等待 30 秒，再切断 12V。</p>
+        <div class="confirm-actions"><button id="poweroff-cancel" class="button quiet" type="button">取消</button><button id="poweroff-submit" class="button danger solid" type="button">安全关机</button></div>
+      </div>
+      <div id="poweroff-progress" class="poweroff-progress" hidden>
+        <h2>系统正在关机</h2>
+        <p>正在停止服务并同步磁盘。页面断开后等待 30 秒再切断 12V。</p>
+        <span><i class="spinner"></i>请勿立即拔电</span>
+      </div>
+    </section>
+  </div>
+  <div id="reboot-modal" class="modal-backdrop" hidden>
+    <section class="confirm-modal" role="dialog" aria-modal="true" aria-labelledby="reboot-title" aria-describedby="reboot-description">
+      <h2 id="reboot-title">重启系统</h2>
+      <p id="reboot-description">交换服务和管理页面会暂时中断。</p>
+      <div class="confirm-actions"><button id="reboot-cancel" class="button quiet" type="button">取消</button><button id="reboot-submit" class="button danger solid" type="button">确认重启</button></div>
+    </section>
+  </div>
+  <div id="factory-reset-modal" class="modal-backdrop" hidden>
+    <section class="confirm-modal" role="dialog" aria-modal="true" aria-labelledby="factory-reset-title" aria-describedby="factory-reset-description">
+      <h2 id="factory-reset-title">恢复默认配置</h2>
+      <p id="factory-reset-description">端口恢复为 6×100G，VLAN、风扇、端口开关和管理员账户会被重置。系统与管理网络不变。</p>
+      <div class="confirm-actions"><button id="factory-reset-cancel" class="button quiet" type="button">取消</button><button id="factory-reset-submit" class="button danger solid" type="button">确认恢复</button></div>
+    </section>
+  </div>
+  <div id="upgrade-modal" class="modal-backdrop" hidden>
+    <section class="confirm-modal" role="dialog" aria-modal="true" aria-labelledby="upgrade-title" aria-describedby="upgrade-description">
+      <h2 id="upgrade-title">执行系统更新</h2>
+      <p id="upgrade-description">更新期间管理页面会暂时断开；如果包含交换服务或驱动变更，交换端口也会短暂中断。请勿断电或重复操作。</p>
+      <div class="confirm-actions"><button id="upgrade-cancel" class="button quiet" type="button">取消</button><button id="upgrade-submit" class="button danger solid" type="button">确认更新</button></div>
+    </section>
+  </div>
+  <div id="toast" class="toast" hidden></div>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>

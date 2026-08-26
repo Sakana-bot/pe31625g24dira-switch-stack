@@ -1,0 +1,49 @@
+# expert
+# LM96163 autonomous curve using the FM10840 remote thermal diode.
+# Select the fan controller I2C branch and restore the default branch later.
+tp("i2c swr 0x58 08");
+
+# Preserve TruTherm and enter direct mode at fail-safe full speed.
+tp("i2c wr-rd 0 0x4c 0x33 1 1");
+tp("i2c write 0 0x4c 0x3002 2");
+tp("i2c write 0 0x4c 0x4A30 2");
+tp("i2c write 0 0x4c 0x4B3F 2");
+tp("i2c write 0 0x4c 0x4D08 2");
+tp("i2c write 0 0x4c 0x4CFF 2");
+
+# 22.5 kHz high-resolution PWM with configurable transition smoothing.
+tp("i2c write 0 0x4c 0x4513 2");
+tp("i2c write 0 0x4c 0x4E00 2");
+tp("i2c write 0 0x4c 0x4F04 2");
+
+# Temperature limit and PWM percentage entries generated from four endpoints.
+tp("i2c write 0 0x4c 0x5000 2"); tp("i2c write 0 0x4c 0x5180 2");
+tp("i2c write 0 0x4c 0x5223 2"); tp("i2c write 0 0x4c 0x5380 2");
+tp("i2c write 0 0x4c 0x5427 2"); tp("i2c write 0 0x4c 0x558A 2");
+tp("i2c write 0 0x4c 0x562C 2"); tp("i2c write 0 0x4c 0x5794 2");
+tp("i2c write 0 0x4c 0x5830 2"); tp("i2c write 0 0x4c 0x599C 2");
+tp("i2c write 0 0x4c 0x5A34 2"); tp("i2c write 0 0x4c 0x5BA6 2");
+tp("i2c write 0 0x4c 0x5C39 2"); tp("i2c write 0 0x4c 0x5DB0 2");
+tp("i2c write 0 0x4c 0x5E3D 2"); tp("i2c write 0 0x4c 0x5FB8 2");
+tp("i2c write 0 0x4c 0x6042 2"); tp("i2c write 0 0x4c 0x61C2 2");
+tp("i2c write 0 0x4c 0x6246 2"); tp("i2c write 0 0x4c 0x63CC 2");
+tp("i2c write 0 0x4c 0x6450 2"); tp("i2c write 0 0x4c 0x65FF 2");
+tp("i2c write 0 0x4c 0x667F 2"); tp("i2c write 0 0x4c 0x67FF 2");
+
+# Enable TACH and transfer control from direct PWM to the hardware LUT.
+tp("i2c write 0 0x4c 0x0306 2");
+tp("i2c write 0 0x4c 0x1950 2");
+tp("i2c write 0 0x4c 0x2104 2");
+tp("i2c write 0 0x4c 0x4A10 2");
+select(undef, undef, undef, 6.0);
+
+# Read back temperature, active PWM and coherent TACH count.
+tp("i2c wr-rd 0 0x4c 0x01 1 1");
+tp("i2c wr-rd 0 0x4c 0x10 1 1");
+tp("i2c wr-rd 0 0x4c 0x4A 1 1");
+tp("i2c wr-rd 0 0x4c 0x4C 1 1");
+tp("i2c wr-rd 0 0x4c 0x46 1 1");
+tp("i2c wr-rd 0 0x4c 0x47 1 1");
+tp("i2c swr 0x58 01");
+print "PE31625G24DIRA_SWITCH_MANAGER_FAN_DONE\n";
+if (open(my $fan_ready, ">", "/run/pe31625g24dira-testpoint/fan-ready")) { print $fan_ready "ready\n"; close($fan_ready); }

@@ -1,0 +1,14 @@
+[Unit]
+Description=PE31625G24DIRA persistent LM96163 fan curve initialization
+Requires=pe31625g24dira-switch.service
+After=pe31625g24dira-switch.service
+PartOf=pe31625g24dira-switch.service
+ConditionPathExists=/etc/pe31625g24dira/pe31625g24dira-fan-init.tp
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/pe31625g24dira-queue-fan-init
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

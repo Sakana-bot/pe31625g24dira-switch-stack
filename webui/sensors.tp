@@ -1,0 +1,5 @@
+# expert
+tp("show sensors switch");
+tp("i2c swr 0x59 A3 1");
+tp("i2c swr 0x59 A4 1");
+print "PE31625G24DIRA_SWITCH_MANAGER_SENSOR_DONE\n";

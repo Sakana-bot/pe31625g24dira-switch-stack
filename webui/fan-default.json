@@ -1,0 +1,10 @@
+{
+  "critical_temperature_c": 80,
+  "hysteresis_c": 4,
+  "idle_speed_percent": 50,
+  "idle_temperature_c": 35,
+  "load_speed_percent": 80,
+  "load_temperature_c": 70,
+  "response_time_s": 10.9,
+  "sensor": "fm10840_core"
+}

@@ -1,0 +1,22 @@
+# expert
+# Read LM96163 registers directly through the FM10840 I2C master.
+# PCA9545 channel 0x08 selects the LM96163 branch. Restore channel 0x01
+# afterwards so the first optical engine remains selected.
+tp("i2c swr 0x58 08");
+tp("i2c swr 0x4c 03 1");
+tp("i2c swr 0x4c 33 1");
+tp("i2c swr 0x4c 45 1");
+tp("i2c swr 0x4c 46 1");
+tp("i2c swr 0x4c 47 1");
+tp("i2c swr 0x4c 48 1");
+tp("i2c swr 0x4c 49 1");
+tp("i2c swr 0x4c 4A 1");
+tp("i2c swr 0x4c 4B 1");
+tp("i2c swr 0x4c 4C 1");
+tp("i2c swr 0x4c 4D 1");
+tp("i2c swr 0x4c 4E 1");
+tp("i2c swr 0x4c 4F 1");
+tp("i2c swr 0x4c FE 1");
+tp("i2c swr 0x4c FF 1");
+tp("i2c swr 0x58 01");
+tp("i2c swr 0x59 A0 5");

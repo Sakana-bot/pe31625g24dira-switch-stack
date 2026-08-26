@@ -1,0 +1,20 @@
+# PE31625G24DIRA original interface layout
+source /etc/network/interfaces.d/*
+
+auto lo
+iface lo inet loopback
+
+# FM10840 host interface
+auto enp1s0
+iface enp1s0 inet static
+    address 0.0.0.0
+
+# DHCP management port
+allow-hotplug enp2s0
+iface enp2s0 inet dhcp
+
+# Fixed maintenance port
+allow-hotplug enp3s0
+iface enp3s0 inet static
+    address 192.168.255.2
+    netmask 255.255.255.0

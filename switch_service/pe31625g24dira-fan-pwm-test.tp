@@ -1,0 +1,29 @@
+# expert
+# Non-persistent LM96163 PWM test. Always finishes at 100% duty cycle.
+tp("i2c swr 0x58 08");
+tp("i2c write 0 0x4c 0x4510 2");
+tp("i2c write 0 0x4c 0x4A30 2");
+tp("i2c write 0 0x4c 0x4B1D 2");
+tp("i2c write 0 0x4c 0x4D08 2");
+tp("i2c write 0 0x4c 0x0304 2");
+
+# 100%, 22.5 kHz, high-resolution PWM.
+tp("i2c write 0 0x4c 0x4CFF 2");
+select(undef, undef, undef, 3.0);
+tp("i2c wr-rd 0 0x4c 0x4C 1 1"); tp("i2c wr-rd 0 0x4c 0x46 1 1"); tp("i2c wr-rd 0 0x4c 0x47 1 1");
+
+# Approximately 75%.
+tp("i2c write 0 0x4c 0x4CBF 2");
+select(undef, undef, undef, 5.0);
+tp("i2c wr-rd 0 0x4c 0x4C 1 1"); tp("i2c wr-rd 0 0x4c 0x46 1 1"); tp("i2c wr-rd 0 0x4c 0x47 1 1");
+
+# Approximately 50%.
+tp("i2c write 0 0x4c 0x4C80 2");
+select(undef, undef, undef, 5.0);
+tp("i2c wr-rd 0 0x4c 0x4C 1 1"); tp("i2c wr-rd 0 0x4c 0x46 1 1"); tp("i2c wr-rd 0 0x4c 0x47 1 1");
+
+# Fail-safe final state: full speed.
+tp("i2c write 0 0x4c 0x4CFF 2");
+select(undef, undef, undef, 3.0);
+tp("i2c wr-rd 0 0x4c 0x4C 1 1"); tp("i2c wr-rd 0 0x4c 0x46 1 1"); tp("i2c wr-rd 0 0x4c 0x47 1 1");
+tp("i2c swr 0x58 01");

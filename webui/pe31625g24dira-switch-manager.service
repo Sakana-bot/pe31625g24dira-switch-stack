@@ -1,0 +1,22 @@
+[Unit]
+Description=PE31625G24DIRA Switch Manager
+After=network-online.target pe31625g24dira-switch.service pe31625g24dira-fan-init.service
+Wants=network-online.target pe31625g24dira-fan-init.service
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory=/opt/pe31625g24dira-switch-manager
+Environment=PATH=/opt/silicom-legacy/usr/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin
+Environment=PERL5LIB=/opt/silicom-legacy/usr/lib/x86_64-linux-gnu/perl/5.22.1:/opt/silicom-legacy/usr/lib/x86_64-linux-gnu/perl/5.22:/opt/silicom-legacy/usr/lib/x86_64-linux-gnu/perl5/5.22:/opt/silicom-legacy/usr/lib/x86_64-linux-gnu/perl-base:/opt/silicom-legacy/usr/share/perl/5.22.1:/opt/silicom-legacy/usr/share/perl5
+Environment=LD_LIBRARY_PATH=/opt/silicom-legacy/usr/lib/x86_64-linux-gnu:/usr/local/rrc/lib:/usr/local/rrc/perl-lib
+ExecStart=/usr/bin/python3 /opt/pe31625g24dira-switch-manager/app.py --config /etc/pe31625g24dira/webui/config.json --port 80
+Restart=on-failure
+RestartSec=3
+UMask=0077
+PrivateTmp=true
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,9 @@
+# expert
+tp("show port 1..15");
+tp("show vlan 1");
+tp("show port config 1..15 pvid");
+tp("show port config 1..15 learning");
+tp("show port config 1..15 ucast_flooding");
+tp("show mac config");
+tp("show switch config spanning-tree");
+tp("show spanning-tree 0");

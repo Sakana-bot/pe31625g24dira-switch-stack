@@ -1,0 +1,13 @@
+[Unit]
+Description=Silicom PE31625G24DIRA board power initialization
+After=systemd-modules-load.service
+Before=pe31625g24dira-switch.service
+ConditionPathExists=/usr/sbin/i2cset
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/pe31625g24dira-board-init
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

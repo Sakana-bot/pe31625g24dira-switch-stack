@@ -1,0 +1,22 @@
+[Unit]
+Description=PE31625G24DIRA managed Layer 2 switch service
+After=local-fs.target systemd-udevd.service
+Conflicts=rrcd.service netfabagent.service hmonagent.service
+ConditionPathExists=/dev/uio0
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/usr/local/rrc/perl
+Environment=FM_API_SHM_KEY=501
+Environment=FM_LIBERTY_TRAIL_CONFIG_FILE=/usr/share/netfab/fm_platform_attributes.cfg
+RuntimeDirectory=pe31625g24dira-testpoint
+ExecStartPre=-/usr/bin/ipcrm -M 501
+ExecStart=/usr/local/sbin/pe31625g24dira-testpoint-wrapper
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=20
+KillMode=control-group
+
+[Install]
+WantedBy=multi-user.target

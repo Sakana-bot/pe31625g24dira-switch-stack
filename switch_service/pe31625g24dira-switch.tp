@@ -1,0 +1,29 @@
+# expert
+# Explicitly keep the SDK's per-port dynamic MAC flush enabled. This is the
+# reversible local safeguard for Linux active-backup bond failover; the WebUI
+# can disable it and regenerates this startup script to persist that choice.
+
+# External faceplate: MPO24-1 is twelve independent 10GBase-SR ports;
+# MPO24-2 is three grouped 100GBase-SR4 ports.
+tp("set port 1..15 up");
+
+# One untagged broadcast domain, like an unmanaged Ethernet switch.
+tp("create vlan 1");
+tp("add vlan port 1 1..15");
+tp("set vlan tagging 1 1..15 untag");
+tp("set port config 1..15 pvid 1");
+
+# Hardware learning and normal unknown-unicast flooding.
+tp("set port config 1..15 learning on");
+tp("set port config 1..15 ucast_flooding forward");
+tp("set mac config mac_age_time 300");
+
+# No STP daemon is present, so deliberately put only the fifteen external
+# ports into forwarding state. Do not create a physical layer-2 loop.
+tp("set switch config spanning-tree multiple");
+tp("set spanning-tree port-state 0 1..15 forwarding");
+
+# Signal that the initial SDK script really reached its end. The separate fan
+# initialization unit waits for this instead of racing the TestPoint prompt.
+if (open(my $switch_ready, ">", "/run/pe31625g24dira-testpoint/switch-ready")) { print $switch_ready "ready\n"; close($switch_ready); }
+print "PE31625G24DIRA_SWITCH_READY\n";
