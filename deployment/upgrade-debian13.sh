@@ -41,7 +41,8 @@ done
 for path in \
     "$KIT_ROOT/KIT-SHA256SUMS" \
     "$KIT_ROOT/RELEASE-MANIFEST.json" \
-    "$KIT_ROOT/driver/fm10k-uio-1.1.0/dkms.conf" \
+    "$KIT_ROOT/VERSION" \
+    "$KIT_ROOT/driver/fm10k-uio-6.12.101-ies1/dkms.conf" \
     "$KIT_ROOT/webui/app.py" \
     "$KIT_ROOT/webui/l2_features.py" \
     "$KIT_ROOT/webui/runtime_state.py" \
@@ -113,8 +114,9 @@ check_file() {
     fi
 }
 
-log "auditing installed files against kit $(cat "$KIT_ROOT/deployment/VERSION")"
+log "auditing installed files against kit $(cat "$KIT_ROOT/VERSION")"
 check_file manager "$KIT_ROOT/RELEASE-MANIFEST.json" /opt/pe31625g24dira-switch-manager/RELEASE-MANIFEST.json
+check_file manager "$KIT_ROOT/VERSION" /opt/pe31625g24dira-switch-manager/VERSION
 for name in app.py l2_features.py runtime_state.py uio_probe.py uio_watch.py; do
     check_file manager "$KIT_ROOT/webui/$name" "/opt/pe31625g24dira-switch-manager/$name"
 done
@@ -141,7 +143,8 @@ for name in pe31625g24dira-fan-dump.tp pe31625g24dira-fan-pwm-test.tp pe31625g24
     check_file switch "$KIT_ROOT/switch_service/$name" "/etc/pe31625g24dira/$name"
 done
 
-if tree_difference driver "$KIT_ROOT/driver/fm10k-uio-1.1.0" /usr/src/fm10k-uio-1.1.0; then
+if tree_difference driver "$KIT_ROOT/driver/fm10k-uio-6.12.101-ies1" /usr/src/fm10k-uio-6.12.101-ies1 || \
+   dkms status 2>/dev/null | grep -q 'fm10k-uio/1.1.0'; then
     DRIVER_CHANGED=1
 else
     log "fm10k-uio driver source matches"
@@ -176,6 +179,7 @@ backup_path /usr/local/sbin/pe31625g24dira-queue-fan-init
 backup_path /usr/local/sbin/pe31625g24dira-testpoint-wrapper
 [ "$BOOT_CHANGED" -eq 0 ] || backup_path /etc/default/grub.d/99-pe31625g24dira-display.cfg
 [ "$DRIVER_CHANGED" -eq 0 ] || backup_path /usr/src/fm10k-uio-1.1.0
+[ "$DRIVER_CHANGED" -eq 0 ] || backup_path /usr/src/fm10k-uio-6.12.101-ies1
 
 rollback() {
     local status=$?
@@ -189,12 +193,21 @@ rollback() {
     cp -a "$BACKUP_ROOT/files/." /
     [ "$BOOT_CHANGED" -eq 0 ] || update-grub
     systemctl daemon-reload
+    if [ "$DRIVER_CHANGED" -eq 1 ]; then
+        dkms remove fm10k-uio/6.12.101-ies1 --all >/dev/null 2>&1
+    fi
     if [ "$DRIVER_CHANGED" -eq 1 ] && [ -d "$BACKUP_ROOT/files/usr/src/fm10k-uio-1.1.0" ]; then
         rsync -a --delete "$BACKUP_ROOT/files/usr/src/fm10k-uio-1.1.0/" /usr/src/fm10k-uio-1.1.0/
         dkms remove fm10k-uio/1.1.0 --all >/dev/null 2>&1
         dkms add fm10k-uio/1.1.0 >/dev/null 2>&1
         dkms build fm10k-uio/1.1.0 -k "$(uname -r)" >/dev/null 2>&1
         dkms install fm10k-uio/1.1.0 -k "$(uname -r)" >/dev/null 2>&1
+        depmod -a
+    elif [ "$DRIVER_CHANGED" -eq 1 ] && [ -d "$BACKUP_ROOT/files/usr/src/fm10k-uio-6.12.101-ies1" ]; then
+        rsync -a --delete "$BACKUP_ROOT/files/usr/src/fm10k-uio-6.12.101-ies1/" /usr/src/fm10k-uio-6.12.101-ies1/
+        dkms add fm10k-uio/6.12.101-ies1 >/dev/null 2>&1
+        dkms build fm10k-uio/6.12.101-ies1 -k "$(uname -r)" >/dev/null 2>&1
+        dkms install fm10k-uio/6.12.101-ies1 -k "$(uname -r)" >/dev/null 2>&1
         depmod -a
     fi
     modprobe uio
@@ -217,6 +230,7 @@ if [ "$MANAGER_CHANGED" -eq 1 ]; then
     log "synchronizing Switch Manager"
     install -d -m 755 /opt/pe31625g24dira-switch-manager/static /etc/pe31625g24dira/webui
     install -m 644 "$KIT_ROOT/RELEASE-MANIFEST.json" /opt/pe31625g24dira-switch-manager/RELEASE-MANIFEST.json
+    install -m 644 "$KIT_ROOT/VERSION" /opt/pe31625g24dira-switch-manager/VERSION
     for name in app.py l2_features.py runtime_state.py uio_probe.py uio_watch.py; do
         install -m 644 "$KIT_ROOT/webui/$name" "/opt/pe31625g24dira-switch-manager/$name"
     done
@@ -253,15 +267,17 @@ if [ "$SWITCH_CHANGED" -eq 1 ]; then
 fi
 
 if [ "$DRIVER_CHANGED" -eq 1 ]; then
-    log "rebuilding fm10k-uio DKMS increment"
+    log "installing fm10k 6.12.101-ies1"
     rsync -r --delete --no-times --omit-dir-times --no-perms \
-        "$KIT_ROOT/driver/fm10k-uio-1.1.0/" /usr/src/fm10k-uio-1.1.0/
-    find /usr/src/fm10k-uio-1.1.0 -type d -exec chmod 755 {} +
-    find /usr/src/fm10k-uio-1.1.0 -type f -exec chmod 644 {} +
+        "$KIT_ROOT/driver/fm10k-uio-6.12.101-ies1/" /usr/src/fm10k-uio-6.12.101-ies1/
+    find /usr/src/fm10k-uio-6.12.101-ies1 -type d -exec chmod 755 {} +
+    find /usr/src/fm10k-uio-6.12.101-ies1 -type f -exec chmod 644 {} +
     dkms remove fm10k-uio/1.1.0 --all >/dev/null 2>&1 || true
-    dkms add fm10k-uio/1.1.0
-    dkms build fm10k-uio/1.1.0 -k "$(uname -r)"
-    dkms install fm10k-uio/1.1.0 -k "$(uname -r)"
+    dkms remove fm10k-uio/6.12.101-ies1 --all >/dev/null 2>&1 || true
+    dkms add fm10k-uio/6.12.101-ies1
+    dkms build fm10k-uio/6.12.101-ies1 -k "$(uname -r)"
+    dkms install fm10k-uio/6.12.101-ies1 -k "$(uname -r)"
+    rm -rf -- /usr/src/fm10k-uio-1.1.0
     depmod -a
     update-initramfs -u -k "$(uname -r)"
     if ! modprobe -r fm10k; then

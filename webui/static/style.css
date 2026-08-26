@@ -25,6 +25,7 @@ strong,b,h1,h2,h3,h4{font-weight:600}
 .sidebar-foot small{color:var(--sidebar-muted);font-size:12px;margin-top:2px}
 .status-dot{width:9px;height:9px;border-radius:50%;background:#80808c}
 .status-dot.up{background:#34ca8c;box-shadow:0 0 0 4px #34ca8c20}
+.status-dot.starting{background:#d69a35;box-shadow:0 0 0 4px #d69a3520}
 .status-dot.down{background:var(--red);box-shadow:0 0 0 4px #d84c5a20}
 .workspace{min-width:0}
 .page-heading{display:none}
@@ -86,7 +87,8 @@ main{padding:22px 28px 36px;max-width:1600px;margin:auto}
 .hardware-columns{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}
 .hardware-columns>.monitor-group{border-top:0}.hardware-columns>.monitor-group+.monitor-group{border-left:1px solid var(--line)}
 .sensor-list{border:1px solid var(--line);border-radius:7px;overflow:hidden;background:#fafafd}
-#page-hardware .sensor-list{background:transparent}
+#page-sensors .sensor-list{background:transparent}
+.system-information-grid>.panel{margin-bottom:0}
 .sensor-list .sensor{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:12px;border:0;border-radius:0;background:transparent;padding:9px 11px}
 .sensor-list .sensor+.sensor{border-top:1px solid var(--line)}
 .sensor-list .sensor strong{font-size:13px;font-weight:400;color:var(--text);margin:0;text-align:right}.sensor-list .sensor small{font-size:13px;font-weight:400;color:var(--text)}
@@ -342,7 +344,7 @@ select:focus,input:focus{border-color:#8374de;box-shadow:0 0 0 2px #8374de1c}
 :root[data-theme="dark"] .health-icon.green{background:#1d332d}
 :root[data-theme="dark"] .health-icon.cyan{background:#1c3337}
 :root[data-theme="dark"] .sensor,:root[data-theme="dark"] .stat-item,:root[data-theme="dark"] .sensor-list,:root[data-theme="dark"] .management-card{background:#1d202a;border-color:var(--line)}
-:root[data-theme="dark"] #page-hardware .sensor-list{background:transparent}
+:root[data-theme="dark"] #page-sensors .sensor-list{background:transparent}
 :root[data-theme="dark"] .management-card.up{background:#192822;border-color:#315343}
 :root[data-theme="dark"] .stats-summary article{background:var(--panel);border-color:var(--line)}
 :root[data-theme="dark"] .stats-summary article.danger,:root[data-theme="dark"] .stat-item.danger{background:transparent;border-color:#5c303a}
@@ -421,4 +423,3 @@ main{padding:14px}
 @media(max-width:480px){.lane-list{grid-template-columns:minmax(52px,1fr) minmax(0,96px) 80px 34px;column-gap:6px}
 #page-ports .lane-row .custom-select{width:80px}
 }
-

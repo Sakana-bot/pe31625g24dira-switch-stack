@@ -102,7 +102,7 @@ int fm10k_uio_probe(struct fm10k_intfc *interface)
 
 	INIT_WORK(&interface->uio_task, fm10k_uio_irq_task);
 	uio->name = "fm10k";
-	uio->version = "6.12-uio-ies1";
+	uio->version = fm10k_driver_version;
 	uio->irq = UIO_IRQ_CUSTOM;
 	uio->irqcontrol = fm10k_uio_irqcontrol;
 	uio->mem[0].name = "BAR4";

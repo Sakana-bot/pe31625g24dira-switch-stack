@@ -76,7 +76,8 @@ case "$PLATFORM_PROFILE" in auto|sil001-hw4-b0|bundle) ;; *) die "--platform-pro
 
 for path in \
     "$KIT_ROOT/RELEASE-MANIFEST.json" \
-    "$KIT_ROOT/driver/fm10k-uio-1.1.0/dkms.conf" \
+    "$KIT_ROOT/VERSION" \
+    "$KIT_ROOT/driver/fm10k-uio-6.12.101-ies1/dkms.conf" \
     "$KIT_ROOT/deployment/runtime-package.sh" \
     "$KIT_ROOT/platforms/sil001-hw4-b0/fm_platform_attributes.cfg" \
     "$KIT_ROOT/switch_service/pe31625g24dira-fan-init.service" \
@@ -286,7 +287,7 @@ audit_report() {
     printf '  deployment kit:   OK\n'
     printf '  target OS:        %s %s\n' "$os_id" "$os_version"
     if command -v dkms >/dev/null 2>&1; then
-        state=$(dkms status 2>/dev/null | grep 'fm10k-uio/1.1.0' || true)
+        state=$(dkms status 2>/dev/null | grep 'fm10k-uio/6.12.101-ies1' || true)
         printf '  DKMS:             %s\n' "${state:-not installed}"
     else
         printf '  DKMS:             command unavailable\n'
@@ -326,6 +327,7 @@ for path in \
     /opt/silicom-legacy \
     /usr/local/rrc \
     /usr/src/fm10k-uio-1.1.0 \
+    /usr/src/fm10k-uio-6.12.101-ies1 \
     /usr/share/netfab/fm_platform_attributes.cfg \
     /usr/share/netfab/fm_platform_attributes_silicom.cfg \
     /usr/share/netfab/fm_platform_attributes_pe31625g24dira.cfg \
@@ -392,6 +394,7 @@ install -d -m 755 "$original_dir/factory-rootfs/usr/share/netfab"
 install -m 644 "$source_platform" \
     "$original_dir/factory-rootfs/usr/share/netfab/fm_platform_attributes.cfg"
 install -m 644 "$KIT_ROOT/RELEASE-MANIFEST.json" "$original_dir/RELEASE-MANIFEST.json"
+install -m 644 "$KIT_ROOT/VERSION" "$original_dir/VERSION"
 
 log "restoring controlled Perl 5.22 / legacy SDK runtime"
 mkdir -p /opt/silicom-legacy
@@ -422,15 +425,15 @@ for path in "$KIT_ROOT"/switch_service/*.tp; do
     install -m 600 "$path" "/etc/pe31625g24dira/$(basename "$path")"
 done
 
-log "building and installing the mainline-based DKMS driver increment for $(uname -r)"
-install -d -m 755 /usr/src/fm10k-uio-1.1.0
-rsync -a --delete "$KIT_ROOT/driver/fm10k-uio-1.1.0/" /usr/src/fm10k-uio-1.1.0/
-if dkms status 2>/dev/null | grep -q 'fm10k-uio/1.1.0'; then
-    dkms remove fm10k-uio/1.1.0 --all
-fi
-dkms add fm10k-uio/1.1.0
-dkms build fm10k-uio/1.1.0 -k "$(uname -r)"
-dkms install fm10k-uio/1.1.0 -k "$(uname -r)"
+log "building and installing fm10k 6.12.101-ies1 for $(uname -r)"
+install -d -m 755 /usr/src/fm10k-uio-6.12.101-ies1
+rsync -a --delete "$KIT_ROOT/driver/fm10k-uio-6.12.101-ies1/" /usr/src/fm10k-uio-6.12.101-ies1/
+dkms remove fm10k-uio/1.1.0 --all >/dev/null 2>&1 || true
+dkms remove fm10k-uio/6.12.101-ies1 --all >/dev/null 2>&1 || true
+dkms add fm10k-uio/6.12.101-ies1
+dkms build fm10k-uio/6.12.101-ies1 -k "$(uname -r)"
+dkms install fm10k-uio/6.12.101-ies1 -k "$(uname -r)"
+rm -rf -- /usr/src/fm10k-uio-1.1.0
 log "installed locally compiled DKMS driver"
 depmod -a
 update-initramfs -u -k "$(uname -r)"
@@ -454,6 +457,7 @@ update-grub
 log "installing WebUI"
 install -d -m 755 /opt/pe31625g24dira-switch-manager/static /etc/pe31625g24dira/webui
 install -m 644 "$KIT_ROOT/RELEASE-MANIFEST.json" /opt/pe31625g24dira-switch-manager/RELEASE-MANIFEST.json
+install -m 644 "$KIT_ROOT/VERSION" /opt/pe31625g24dira-switch-manager/VERSION
 for path in app.py l2_features.py runtime_state.py uio_probe.py uio_watch.py; do
     install -m 644 "$KIT_ROOT/webui/$path" "/opt/pe31625g24dira-switch-manager/$path"
 done
@@ -540,7 +544,7 @@ else
 fi
 
 log "deployment completed; rollback copy: $BACKUP_ROOT"
-dkms status | grep 'fm10k-uio/1.1.0' || true
+dkms status | grep 'fm10k-uio/6.12.101-ies1' || true
 if [ -e /dev/uio0 ]; then
     log "UIO ready: $(cat /sys/class/uio/uio0/name 2>/dev/null || printf unknown)"
 fi

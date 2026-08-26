@@ -1,6 +1,6 @@
 # PE31625G24DIRA Switch Manager
 
-Version 0.12.5-dev is the WebUI component of PE31625G24DIRA Switch Stack. It requires Linux and Python 3.9 or newer, provides first-run administrator initialization plus a dedicated session login page on HTTP port 80, and reads
+Version 1.1.0 is the management software for PE31625G24DIRA Switch Stack. It requires Linux and Python 3.9 or newer, provides first-run administrator initialization plus a dedicated session login page on HTTP port 80, and reads
 external-port link state plus RMON/MAC statistics directly from FM10840
 registers through `/dev/uio0` every second.
 
@@ -53,9 +53,9 @@ python .\webui\qa_server.py
 
 ## 监控与 VLAN
 
-概览页显示 Atom CPU 型号、利用率、负载、内存、Linux hwmon 温度、运行时间、两只 Intel I211 管理口，以及全部外部逻辑端口的汇总流量。管理网络沿用原厂布局：`enp2s0` 使用 DHCP，`enp3s0` 固定为 `192.168.255.2/24`，不由 WebUI 修改。Linux 温度按 CPU 核心 DTS、SoC DTS、ACPI 固件汇总温区分层；FM10840 的 9 路片上温度按 Intel 数据手册标注实际位置，未公开的 `TEMPERATURE[8]` 保留原始编号。风扇转速会自动发现 hwmon 的 `fan*_input` 节点。FM10840 片上温度及电压通过 SDK 后台低频读取，避免频繁加载 TestPoint。
+概览页显示 Atom CPU、内存、存储、运行时间、管理口、温度和交换端口汇总。传感器页集中显示 Linux hwmon 与 FM10840 的温度、电压和光引擎诊断；散热页显示 FM10840 当前温度、风扇转速与风扇曲线；系统信息页只显示能够从运行系统验证的管理软件、IES SDK、TestPoint、fm10k UIO/IES 驱动和内核版本，并注明驱动的主线与 Intel 参考源码来源。
 
-硬件页以闲置/负载温度、闲置/负载 PWM 百分比、临界温度和响应时间定义风扇曲线。闲置与负载 PWM 可在 0–100% 内设置，允许高功率风扇使用很低的占空比，但负载档不能低于闲置档，临界温度仍强制 100%。后端把两个端点间自动展开成 LM96163 的 12 项硬件 LUT，先进入全速直接模式再写表，成功后交回硬件自主控制；WebUI 停止或重启不影响调速。PWM 是开环控制，实际转速以页面 TACH 为准。固定的 4°C 降档回差用于防止温度临界点附近反复变速，与 PWM 响应时间是两个独立参数。
+散热页以闲置/负载温度、闲置/负载 PWM 百分比、临界温度和响应时间定义风扇曲线。闲置与负载 PWM 可在 0–100% 内设置，允许高功率风扇使用很低的占空比，但负载档不能低于闲置档，临界温度仍强制 100%。后端把两个端点间自动展开成 LM96163 的 12 项硬件 LUT，先进入全速直接模式再写表，成功后交回硬件自主控制；管理软件停止或重启不影响调速。PWM 是开环控制，实际转速以页面 TACH 为准。固定的 4°C 降档回差用于防止温度临界点附近反复变速，与 PWM 响应时间是两个独立参数。
 
 端口页面支持每个逻辑端口与整组 MPO24 的持久化开关；MPO 总开关是批量动作和状态汇总，子端口始终可单独开启。速率由用户明确选择，不执行自动探测：拆分 Lane 支持 10G/25G，聚合端口支持 40G/100G。开关逻辑端口时还会同步 FCI 私有发射掩码，并通过写后回读确认，避免出现 UI 显示关闭但仍发光。计数器视图直接读取 FM10840 RMON/MAC 寄存器，显示单播、组播、广播、好/坏字节、帧长分布、FCS/编码错误，以及 STP、VLAN、FFU、Policer、TTL、Trigger 等丢弃原因，不经过 TestPoint SDK。
 
@@ -81,7 +81,7 @@ VLAN 页面以物理 EPL/Lane 为稳定标识，按端口配置接入（Access�
 
 页面在可信管理网的 HTTP 80 端口提供服务。首次打开时由设备所有者创建管理员账号，不生成默认账号或随机密码文件；初始化完成后入口自动关闭。凭据使用 PBKDF2 摘要，并配合 HttpOnly/SameSite 会话 Cookie、每会话 CSRF 校验和登录限速。HTTP 不加密登录口令，因此管理口不能暴露到不可信网络。实时链路状态与 RMON 统计直接读取 `/dev/uio0`，板级温度和电压通过常驻 TestPoint 低频读取。
 
-板载 FCI/Amphenol 12-Lane 光引擎不是标准可插拔 QSFP，旧 SDK 的标准 QSFP DOM 解码会生成伪读数，因此页面不展示由标准偏移解析出的温度、电压、偏置或 TX 功率。硬件页的手动光引擎诊断从 `0x50` 独立读取厂商、型号、序列号和生产日期，同时复现私有 RX 功率路径 `PCA9545 0x58 -> 0x40 -> page 1 -> 0xce`；24 字节向量全零时明确判为“不可用”，不会伪装成 12 路 0 mW。
+板载 FCI/Amphenol 12-Lane 光引擎不是标准可插拔 QSFP，旧 SDK 的标准 QSFP DOM 解码会生成伪读数，因此页面不展示由标准偏移解析出的温度、电压、偏置或 TX 功率。传感器页的手动光引擎诊断从 `0x50` 独立读取厂商、型号、序列号和生产日期，同时复现私有 RX 功率路径 `PCA9545 0x58 -> 0x40 -> page 1 -> 0xce`；24 字节向量全零时明确判为“不可用”，不会伪装成 12 路 0 mW。
 
 重启和关机位于顶栏右侧，均使用一次确认弹窗和 CSRF 保护；如果硬件配置或 SDK 读取正在执行，后端会拒绝操作。重启确认后使用与其他长操作相同的顶部进度提示，管理服务恢复后自动进入登录页。在线更新可从固定 GitHub 仓库的 latest Release 获取通用部署包及独立 SHA-256 文件，也可手动上传同一部署包；两种方式都会自动显示外层 SHA-256、比较版本并执行只读审计，只有新版本能够进入二次确认和执行阶段。上传限制为 64 MiB，拒绝路径穿越、链接和设备文件，限制成员数量与解压尺寸，并校验 `KIT-SHA256SUMS`。更新通过独立 systemd transient unit 执行，页面轮询作业状态，避免 WebUI 更新自身时终止升级作业。当前哈希能验证传输与包内完整性，但不替代发布者数字签名。
 

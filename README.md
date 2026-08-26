@@ -1,6 +1,6 @@
 # PE31625G24DIRA Switch Stack
 
-Silicom PE31625G24DIRA Switch-on-NIC 的社区管理软件，可将板载 Intel FM10840 作为独立二层交换机使用。提供端口拆分、VLAN、硬件监控、风扇调速、光发射控制、配置备份和 WebUI 升级。
+Silicom PE31625G24DIRA Switch-on-NIC 的社区管理软件，可将板载 Intel FM10840 作为独立二层交换机使用。提供端口拆分、VLAN、传感器监控、风扇调速、光发射控制、配置备份和在线升级。
 
 > [!WARNING]
 > 本项目全部代码由 ChatGPT 生成，不保证正确性、可靠性、安全性、可用性或适用于任何用途。使用者应自行审计并承担网络中断、数据丢失及硬件损坏等风险。

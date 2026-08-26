@@ -79,6 +79,12 @@ class Handler(BaseHTTPRequestHandler):
             payload = {
                 "version": APP.APP_VERSION,
                 "service": "active",
+                "service_health": {"status": "healthy", "service": "active", "uio_ready": True, "testpoint_ready": True},
+                "system_information": {
+                    "hostname": "pe31625-preview", "os": "Debian GNU/Linux 13 (trixie)", "kernel": "6.12.0-preview", "bios": "preview",
+                    "storage": {"total": 32000000000, "used": 4000000000, "free": 28000000000, "usage_percent": 12.5},
+                    "components": {"manager": APP.APP_VERSION, "ies_sdk": "4.3.3_0471_00339702_silicom", "testpoint": "4.3", "fm10k_uio": {"version": "6.12.101-ies1", "loaded": True}},
+                },
                 "groups": parsed["groups"],
                 "ports": parsed["ports"],
                 "endpoints": admin["endpoints"],
@@ -107,6 +113,9 @@ class Handler(BaseHTTPRequestHandler):
             source = "kernel" if "source=kernel" in self.path else "switch" if "source=switch" in self.path else "system"
             content = "[    0.000000] Linux version 6.12.0-amd64\n[    0.000000] Command line: BOOT_IMAGE=/vmlinuz root=UUID=preview ro quiet\n[    0.041726] smpboot: CPU0: Intel Atom E3826" if source == "kernel" else "2026-08-24 20:31:10 systemd[1]: Started PE31625G24DIRA Switch Manager.\n2026-08-24 20:31:13 switch-manager[612]: WebUI ready"
             payload = {"source": source, "sampled": int(time.time()), "line_count": len(content.splitlines()), "content": content}
+            return self.send_bytes(json.dumps(payload).encode("utf-8"), "application/json; charset=utf-8")
+        if self.path == "/api/health":
+            payload = {"version": APP.APP_VERSION, "status": "healthy", "service": "active", "uio_ready": True, "testpoint_ready": True}
             return self.send_bytes(json.dumps(payload).encode("utf-8"), "application/json; charset=utf-8")
         if self.path == "/api/telemetry":
             _, parsed = APP.parse_platform(
@@ -288,12 +297,15 @@ class Handler(BaseHTTPRequestHandler):
         page_routes = (
             "/",
             "/overview",
-            "/hardware",
+            "/sensors",
+            "/system",
+            "/cooling",
             "/ports",
             "/statistics",
             "/vlans",
             "/network",
             "/settings",
+            "/backup",
             "/logs",
         )
         mapping = dict.fromkeys(page_routes, ("index.html", "text/html; charset=utf-8"))

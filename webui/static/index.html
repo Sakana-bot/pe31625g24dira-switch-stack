@@ -17,7 +17,7 @@
           <button class="nav-group-toggle" type="button" aria-expanded="true"><svg class="app-icon" aria-hidden="true" viewBox="0 0 24 24"><path d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2"/></svg><span>状态</span><svg class="app-icon nav-chevron" aria-hidden="true" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></button>
           <div class="nav-children">
             <button class="nav-item active" data-page="overview" type="button">概览</button>
-            <button class="nav-item" data-page="hardware" type="button">硬件</button>
+            <button class="nav-item" data-page="sensors" type="button">传感器</button>
             <button class="nav-item" data-page="logs" type="button">日志</button>
           </div>
         </div>
@@ -32,6 +32,8 @@
         <div class="nav-group">
           <button class="nav-group-toggle" type="button" aria-expanded="false"><svg class="app-icon" aria-hidden="true" viewBox="0 0 24 24"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.38a2 2 0 0 0-.73-2.73l-.15-.09a2 2 0 0 1-1-1.74v-.51a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg><span>系统</span><svg class="app-icon nav-chevron" aria-hidden="true" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></button>
           <div class="nav-children">
+            <button class="nav-item" data-page="system" type="button">系统信息</button>
+            <button class="nav-item" data-page="cooling" type="button">散热</button>
             <button class="nav-item" data-page="maintenance" type="button">备份与升级</button>
             <button class="nav-item" data-page="settings" type="button">设置</button>
           </div>
@@ -73,6 +75,7 @@
                   <div><dt>CPU 使用率</dt><dd id="system-cpu-usage">—</dd></div>
                   <div><dt>平均负载</dt><dd id="cpu-load">—</dd></div>
                   <div><dt>内核</dt><dd id="kernel">—</dd></div>
+                  <div><dt>存储</dt><dd id="storage">—</dd></div>
                 </dl>
               </section>
               <section class="panel">
@@ -112,7 +115,7 @@
           </section>
         </section>
 
-        <section id="page-hardware" class="page">
+        <section id="page-sensors" class="page">
           <section class="panel">
             <div class="panel-head"><h2>主机传感器</h2></div>
             <div class="host-sensor-groups">
@@ -147,12 +150,23 @@
                 <div id="voltage-sensors" class="sensor-list"></div>
               </section>
             </div>
-            <section class="monitor-group">
-              <h3 class="subhead">风扇</h3>
-              <div id="fan-sensors" class="sensor-list"><span class="muted">正在检查风扇转速…</span></div>
-            </section>
           </section>
 
+          <section class="panel diagnostic-panel">
+            <div class="panel-head"><h2>光引擎诊断</h2><button id="optics-read" class="button secondary" type="button">读取</button></div>
+            <div id="optics-result" class="diagnostic-empty">尚未读取</div>
+          </section>
+
+        </section>
+
+        <section id="page-cooling" class="page">
+          <section class="panel">
+            <div class="panel-head"><h2>散热状态</h2></div>
+            <div class="temperature-summary">
+              <div><small>FM10840</small><strong id="cooling-switch-temp">—</strong></div>
+              <div><small>System Fan</small><strong id="cooling-fan-rpm">—</strong></div>
+            </div>
+          </section>
           <section class="panel fan-settings-panel">
             <div class="panel-head"><h2>风扇曲线</h2></div>
             <form id="fan-form" class="fan-form" novalidate>
@@ -164,20 +178,53 @@
                 <label>临界温度<span><input id="fan-critical-temperature" type="number" min="30" max="120" step="1" required> °C</span></label>
                 <label>全范围响应时间<select id="fan-response-time"><option value="5.45">快速 · 5.45 秒</option><option value="10.9">标准 · 10.9 秒</option><option value="21.6">平缓 · 21.6 秒</option><option value="43.7">静音 · 43.7 秒</option></select></label>
               </div>
-              <div class="fan-preview">
-                <span id="fan-preview-idle"></span><i></i><span id="fan-preview-load"></span><i class="critical"></i><span id="fan-preview-critical"></span>
-              </div>
-              <div class="fan-curve-actions">
-                <button id="fan-apply" class="button primary" type="submit">应用风扇曲线</button>
-              </div>
+              <div class="fan-preview"><span id="fan-preview-idle"></span><i></i><span id="fan-preview-load"></span><i class="critical"></i><span id="fan-preview-critical"></span></div>
+              <div class="fan-curve-actions"><button id="fan-apply" class="button primary" type="submit">应用风扇曲线</button></div>
             </form>
           </section>
+        </section>
 
-          <section class="panel diagnostic-panel">
-            <div class="panel-head"><h2>光引擎诊断</h2><button id="optics-read" class="button secondary" type="button">读取</button></div>
-            <div id="optics-result" class="diagnostic-empty">尚未读取</div>
-          </section>
-
+        <section id="page-system" class="page">
+          <div class="two-column system-information-grid">
+            <section class="panel">
+              <div class="panel-head"><h2>设备</h2></div>
+              <dl class="info-list">
+                <div><dt>型号</dt><dd id="system-device-model">—</dd></div>
+                <div><dt>硬件版本</dt><dd id="system-device-version">—</dd></div>
+                <div><dt>平台配置</dt><dd id="system-device-platform">—</dd></div>
+                <div><dt>序列号</dt><dd id="system-device-serial">—</dd></div>
+              </dl>
+            </section>
+            <section class="panel">
+              <div class="panel-head"><h2>系统</h2></div>
+              <dl class="info-list">
+                <div><dt>主机名</dt><dd id="system-info-hostname">—</dd></div>
+                <div><dt>运行时间</dt><dd id="system-info-uptime">—</dd></div>
+                <div><dt>操作系统</dt><dd id="system-info-os">—</dd></div>
+                <div><dt>内核</dt><dd id="system-info-kernel">—</dd></div>
+                <div><dt>BIOS</dt><dd id="system-info-bios">—</dd></div>
+                <div><dt>存储</dt><dd id="system-info-storage">—</dd></div>
+              </dl>
+            </section>
+            <section class="panel">
+              <div class="panel-head"><h2>软件组件</h2></div>
+              <dl class="info-list">
+                <div><dt>管理软件</dt><dd id="component-manager">—</dd></div>
+                <div><dt>IES SDK</dt><dd id="component-ies">—</dd></div>
+                <div><dt>TestPoint</dt><dd id="component-testpoint">—</dd></div>
+                <div><dt>fm10k UIO/IES 驱动</dt><dd id="component-driver">—</dd></div>
+                <div><dt>驱动源码</dt><dd>Linux 6.12.101 + Intel fm10k 0.27.1</dd></div>
+              </dl>
+            </section>
+            <section class="panel">
+              <div class="panel-head"><h2>交换服务</h2></div>
+              <dl class="info-list">
+                <div><dt>状态</dt><dd id="system-service-status">—</dd></div>
+                <div><dt>UIO</dt><dd id="system-service-uio">—</dd></div>
+                <div><dt>TestPoint</dt><dd id="system-service-testpoint">—</dd></div>
+              </dl>
+            </section>
+          </div>
         </section>
 
         <section id="page-stats" class="page">

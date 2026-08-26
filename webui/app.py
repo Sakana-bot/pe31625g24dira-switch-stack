@@ -38,7 +38,19 @@ try:
 except ModuleNotFoundError:  # direct import used by the local test harness
     from webui.runtime_state import RuntimeState
 
-APP_VERSION = "1.0.0"
+def application_version():
+    """Read the single project version in source and installed layouts."""
+    for path in (Path(__file__).with_name("VERSION"), Path(__file__).parent.parent / "VERSION"):
+        try:
+            value = path.read_text(encoding="utf-8").strip()
+        except OSError:
+            continue
+        if re.fullmatch(r"\d+\.\d+\.\d+(?:[-+][A-Za-z0-9._-]+)?", value):
+            return value
+    return "development"
+
+
+APP_VERSION = application_version()
 GROUPS = (
     {"key": "epl0", "epl": 0, "mpo": 1, "position": 1, "resource": 0},
     {"key": "epl1", "epl": 1, "mpo": 1, "position": 2, "resource": 1},
@@ -1547,7 +1559,7 @@ def configuration_export_payload(config):
         "format_version": CONFIG_EXPORT_VERSION,
         "product": "Silicom PE31625G24DIRA",
         "exported_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-        "webui_version": APP_VERSION,
+        "manager_version": APP_VERSION,
         "topology": {"groups": topology_choices(parsed)},
         "vlans": load_vlan_config(config, parsed),
         "ports": load_port_config(config, parsed),
@@ -1848,13 +1860,126 @@ def status_text(parsed):
 
 
 def service_state():
-    process = subprocess.Popen(
-        ["/bin/systemctl", "is-active", SERVICE],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-    )
-    stdout, _ = process.communicate()
-    return stdout.decode("utf-8", "replace").strip()
+    try:
+        process = subprocess.run(
+            ["/bin/systemctl", "is-active", SERVICE],
+            capture_output=True,
+            text=True,
+            timeout=3,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return "unknown"
+    return process.stdout.strip() or "inactive"
+
+
+def service_health_payload():
+    service = service_state()
+    uio_ready = Path("/dev/uio0").exists()
+    testpoint_ready = Path(SWITCH_READY_PATH).is_file()
+    if service == "active" and uio_ready and testpoint_ready:
+        status = "healthy"
+    elif service in {"activating", "reloading"} or (
+        service == "active" and uio_ready and not testpoint_ready
+    ):
+        status = "initializing"
+    else:
+        status = "error"
+    return {
+        "status": status,
+        "service": service,
+        "uio_ready": uio_ready,
+        "testpoint_ready": testpoint_ready,
+    }
+
+
+def _os_release_name():
+    try:
+        values = {}
+        for line in Path("/etc/os-release").read_text(encoding="utf-8").splitlines():
+            if "=" in line:
+                key, value = line.split("=", 1)
+                values[key] = value.strip().strip('"')
+        return values.get("PRETTY_NAME") or values.get("NAME") or "未知"
+    except OSError:
+        return "未知"
+
+
+def _ies_sdk_version():
+    candidates = []
+    for path in Path("/usr/local/rrc/lib").glob("libFocalpointSDK.so.*"):
+        match = re.fullmatch(
+            r"libFocalpointSDK\.so\.(\d+\.\d+\.\d+(?:_[A-Za-z0-9_]+)?)",
+            path.name,
+        )
+        if match:
+            candidates.append(match.group(1))
+    return max(candidates, key=len, default="未知")
+
+
+def _testpoint_version():
+    path = Path("/usr/local/rrc/perl/Applications/TestPoint.pm")
+    try:
+        match = re.search(
+            r"\$TestPoint_VERSION\s*=\s*[\"']([^\"']+)",
+            path.read_text(encoding="utf-8", errors="replace"),
+        )
+    except OSError:
+        return "未知"
+    return match.group(1) if match else "未知"
+
+
+def _driver_version():
+    try:
+        output = subprocess.run(
+            ["dkms", "status"], capture_output=True, text=True, timeout=5, check=False
+        ).stdout
+    except (OSError, subprocess.TimeoutExpired):
+        output = ""
+    match = re.search(r"(?:^|\n)fm10k-uio/([^,\s]+)", output)
+    dkms_version = match.group(1) if match else "未知"
+    try:
+        module_version = subprocess.run(
+            ["modinfo", "-F", "version", "fm10k"],
+            capture_output=True,
+            text=True,
+            timeout=3,
+            check=False,
+        ).stdout.strip()
+    except (OSError, subprocess.TimeoutExpired):
+        module_version = ""
+    loaded = Path("/sys/module/fm10k").exists() and Path("/dev/uio0").exists()
+    return {
+        "version": module_version or dkms_version,
+        "loaded": loaded,
+    }
+
+
+def system_information_payload():
+    usage = shutil.disk_usage("/")
+    driver = _driver_version()
+    try:
+        bios = read_text("/sys/class/dmi/id/bios_version").strip()
+    except OSError:
+        bios = "未知"
+    return {
+        "hostname": os.uname()[1],
+        "os": _os_release_name(),
+        "kernel": os.uname()[2],
+        "bios": bios or "未知",
+        "storage": {
+            "total": usage.total,
+            "used": usage.used,
+            "free": usage.free,
+            "usage_percent": round(usage.used * 100 / usage.total, 1) if usage.total else 0,
+        },
+        "components": {
+            "manager": APP_VERSION,
+            "ies_sdk": _ies_sdk_version(),
+            "testpoint": _testpoint_version(),
+            "fm10k_uio": driver,
+        },
+    }
 
 
 def platform_payload(config):
@@ -1863,9 +1988,12 @@ def platform_payload(config):
     port_config = load_port_config(config, parsed)
     l2 = load_l2_config(config, parsed)
     admin = port_admin_payload(parsed, port_config)
+    health = service_health_payload()
     return {
         "version": APP_VERSION,
-        "service": service_state(),
+        "service": health["service"],
+        "service_health": health,
+        "system_information": system_information_payload(),
         "groups": parsed["groups"],
         "ports": parsed["ports"],
         "budget": {
@@ -2905,12 +3033,7 @@ def verify_kit_manifest(kit_root):
 
 
 def installed_package_version():
-    path = Path("/opt/pe31625g24dira-switch-manager/RELEASE-MANIFEST.json")
-    try:
-        value = json.loads(path.read_text(encoding="utf-8")).get("package_version", "")
-    except (OSError, json.JSONDecodeError):
-        return ""
-    return value if isinstance(value, str) else ""
+    return APP_VERSION
 
 
 def version_key(value):
@@ -2964,14 +3087,14 @@ def stage_upgrade_archive(data, filename="update.tar.gz"):
         required = (
             kit_root / "KIT-SHA256SUMS",
             kit_root / "RELEASE-MANIFEST.json",
-            kit_root / "deployment" / "VERSION",
+            kit_root / "VERSION",
             kit_root / "deployment" / "upgrade-debian13.sh",
             kit_root / "webui" / "app.py",
         )
         if not all(path.is_file() for path in required):
             raise ApiError(400, "部署包不完整")
         verify_kit_manifest(kit_root)
-        version = (kit_root / "deployment" / "VERSION").read_text(encoding="utf-8").strip()
+        version = (kit_root / "VERSION").read_text(encoding="utf-8").strip()
         if not re.fullmatch(r"[0-9]+(?:\.[0-9]+){2}(?:[-+][A-Za-z0-9._-]+)?", version):
             raise ApiError(400, "部署包版本无效")
         try:
@@ -2981,12 +3104,11 @@ def stage_upgrade_archive(data, filename="update.tar.gz"):
         artifact_type = release.get("artifact_type")
         if artifact_type != "deploy-kit":
             raise ApiError(400, "部署包类型无效")
-        if release.get("package_version") != version:
+        if release.get("version") != version:
             raise ApiError(400, "部署包版本清单不一致")
         metadata = {
             "version": version,
             "artifact_type": artifact_type,
-            "runtime_version": release.get("embedded_runtime_package_version"),
             "root": root_name,
             "filename": Path(filename).name,
             "sha256": hashlib.sha256(data).hexdigest(),
@@ -4740,7 +4862,9 @@ class Handler(BaseHTTPRequestHandler):
             if path in (
                 "/",
                 "/overview",
-                "/hardware",
+                "/sensors",
+                "/system",
+                "/cooling",
                 "/ports",
                 "/statistics",
                 "/vlans",
@@ -4764,6 +4888,10 @@ class Handler(BaseHTTPRequestHandler):
                 payload["username"] = self.session["username"]
                 payload["system_settings"] = system_settings_payload()
                 return self.json_response(200, payload)
+            if path == "/api/health":
+                return self.json_response(
+                    200, {"version": APP_VERSION, **service_health_payload()}
+                )
             if path == "/api/config/export":
                 return self.json_response(
                     200, configuration_export_payload(self.app_state.config)

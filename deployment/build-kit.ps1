@@ -7,18 +7,13 @@ param(
 $ErrorActionPreference = 'Stop'
 $deploymentDirectory = Split-Path -Parent $MyInvocation.MyCommand.Path
 $projectRoot = Split-Path -Parent $deploymentDirectory
-$version = (Get-Content -LiteralPath (Join-Path $deploymentDirectory 'VERSION') -Raw).Trim()
-$appSource = Get-Content -LiteralPath (Join-Path $projectRoot 'webui\app.py') -Raw
-if ($appSource -notmatch 'APP_VERSION\s*=\s*"([^"]+)"') {
-    throw 'Unable to read APP_VERSION from webui/app.py'
-}
-$webuiVersion = $Matches[1]
+$version = (Get-Content -LiteralPath (Join-Path $projectRoot 'VERSION') -Raw).Trim()
 if (-not $OutputDirectory) {
     $OutputDirectory = Join-Path $projectRoot 'artifacts'
 }
 $OutputDirectory = [System.IO.Path]::GetFullPath($OutputDirectory)
 $stageParent = Join-Path ([System.IO.Path]::GetTempPath()) ("pe31625g24dira-kit-" + [guid]::NewGuid().ToString('N'))
-$kitName = "pe31625g24dira-deploy-kit-$version-webui-$webuiVersion"
+$kitName = "pe31625g24dira-deploy-kit-$version"
 $stage = Join-Path $stageParent $kitName
 $archive = Join-Path $OutputDirectory "$kitName.tar.gz"
 
@@ -37,6 +32,7 @@ try {
     foreach ($name in $projectDocuments) {
         Copy-Item -LiteralPath (Join-Path $projectRoot $name) -Destination $stage
     }
+    Copy-Item -LiteralPath (Join-Path $projectRoot 'VERSION') -Destination $stage
 
     Copy-Item -LiteralPath $deploymentDirectory -Destination (Join-Path $stage 'deployment') -Recurse
 
@@ -45,9 +41,9 @@ try {
     Copy-Item -LiteralPath (Join-Path $projectRoot 'webui\reference_original_6x100.cfg') `
         -Destination (Join-Path $smallB0Destination 'fm_platform_attributes.cfg')
 
-    $driverDestination = Join-Path $stage 'driver\fm10k-uio-1.1.0'
+    $driverDestination = Join-Path $stage 'driver\fm10k-uio-6.12.101-ies1'
     New-Item -ItemType Directory -Path $driverDestination -Force | Out-Null
-    Copy-Item -Path (Join-Path $projectRoot 'driver\fm10k-uio-1.1.0\*') -Destination $driverDestination -Recurse
+    Copy-Item -Path (Join-Path $projectRoot 'driver\fm10k-uio-6.12.101-ies1\*') -Destination $driverDestination -Recurse
 
     $switchDestination = Join-Path $stage 'switch_service'
     New-Item -ItemType Directory -Path $switchDestination -Force | Out-Null
@@ -85,6 +81,7 @@ try {
     foreach ($name in $webFiles) {
         Copy-Item -LiteralPath (Join-Path $projectRoot "webui\$name") -Destination $webDestination
     }
+    Copy-Item -LiteralPath (Join-Path $projectRoot 'VERSION') -Destination $webDestination
     Copy-Item -Path (Join-Path $projectRoot 'webui\static\*') -Destination (Join-Path $webDestination 'static') -Recurse
     $retiredFontDirectory = Join-Path $webDestination 'static\fonts'
     if (Test-Path -LiteralPath $retiredFontDirectory) {
@@ -93,20 +90,10 @@ try {
 
     $releaseManifest = [ordered]@{
         artifact_type = 'deploy-kit'
-        package_format = 2
-        package_version = $version
-        webui_version = $webuiVersion
-        release_status = if ($webuiVersion.EndsWith('-dev')) { 'development' } else { 'stable' }
-        config_schema = 3
-        configuration_export_schema = 3
-        platform_schema = 2
-        driver_version = '1.1.0'
-        minimum_upgrade_version = '0.3.0'
+        version = $version
+        release_status = if ($version.EndsWith('-dev')) { 'development' } else { 'stable' }
         embedded_platform_profiles = @('sil001-hw4-b0')
-        runtime_package_format = 2
-        compatible_runtime_major = 2
         runtime_required_for_fresh_install = $true
-        embedded_runtime_package_version = $null
     }
     $releaseManifestJson = $releaseManifest | ConvertTo-Json
     [System.IO.File]::WriteAllText(

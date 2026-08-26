@@ -4,13 +4,13 @@ import { createApiClient, waitForJob } from '/api-client.js';
 import { closeCustomSelects, destroySelects, enhanceNumberInputs, enhanceSelects, syncSelect } from '/controls.js';
 
 const TRAFFIC_UNIT_STORAGE_KEY = 'pe31625g24dira-traffic-unit';
-const ui = { state: null, csrf: null, topology: {}, vlans: [], l2: null, l2Saved: null, pendingPortAdmin: null, vlanTaggedPort: null, vlanPreview: null, fan: null, importedConfig: null, upgradeReady: false, upgradeCandidate: null, live: {}, telemetry: null, pendingTelemetry: null, busy: false, poweringOff: false, rebooting: false, telemetryTimer: null, logTimer: null, toastTimer: null, topologyPreview: null, logSource: 'system', logsLoaded: false, logAutoFollow: true, logRequestId: 0, trafficUnit: window.localStorage.getItem(TRAFFIC_UNIT_STORAGE_KEY) === 'bytes' ? 'bytes' : 'bits' };
+const ui = { state: null, csrf: null, topology: {}, vlans: [], l2: null, l2Saved: null, pendingPortAdmin: null, vlanTaggedPort: null, vlanPreview: null, fan: null, importedConfig: null, upgradeReady: false, upgradeCandidate: null, live: {}, telemetry: null, pendingTelemetry: null, busy: false, poweringOff: false, rebooting: false, telemetryTimer: null, healthTimer: null, logTimer: null, toastTimer: null, topologyPreview: null, logSource: 'system', logsLoaded: false, logAutoFollow: true, logRequestId: 0, trafficUnit: window.localStorage.getItem(TRAFFIC_UNIT_STORAGE_KEY) === 'bytes' ? 'bytes' : 'bits' };
 const $ = (selector) => document.querySelector(selector);
 const speedLabel = (speed) => `${speed / 1000}G`;
 const clone = (value) => JSON.parse(JSON.stringify(value));
 const escapeHtml = (value) => String(value).replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]);
 const TELEMETRY_INTERVAL_SECONDS = 1;
-const PAGE_PATHS = { overview: '/overview', logs: '/logs', ports: '/ports', stats: '/statistics', vlans: '/vlans', network: '/network', hardware: '/hardware', maintenance: '/backup', settings: '/settings' };
+const PAGE_PATHS = { overview: '/overview', sensors: '/sensors', logs: '/logs', ports: '/ports', stats: '/statistics', vlans: '/vlans', network: '/network', system: '/system', cooling: '/cooling', maintenance: '/backup', settings: '/settings' };
 const PATH_PAGES = Object.fromEntries(Object.entries(PAGE_PATHS).map(([page, path]) => [path, page]));
 const api = createApiClient(() => ui.csrf);
 
@@ -43,7 +43,7 @@ function setPage(name, updateHistory = true) {
     group.classList.toggle('open', active);
     group.querySelector('.nav-group-toggle').setAttribute('aria-expanded', String(group.classList.contains('open')));
   });
-  const labels = { overview: '概览', logs: '日志', ports: '端口', stats: '端口统计', vlans: 'VLAN', network: '网络功能', hardware: '硬件', maintenance: '备份与升级', settings: '设置' };
+  const labels = { overview: '概览', sensors: '传感器', logs: '日志', ports: '端口', stats: '端口统计', vlans: 'VLAN', network: '网络功能', system: '系统信息', cooling: '散热', maintenance: '备份与升级', settings: '设置' };
   $('#page-title').textContent = labels[name];
   $('#top-page-title').textContent = labels[name];
   if (name === 'logs' && !ui.logsLoaded) loadLogs();
@@ -214,6 +214,10 @@ function renderTelemetry(data) {
   $('#hardware-version').textContent = [identity.vpd_version, identity.hardware_family].filter(Boolean).join(' · ') || '未知';
   $('#hardware-platform').textContent = [identity.platform, identity.hw_version === null || identity.hw_version === undefined ? null : `hw_version ${identity.hw_version}`].filter(Boolean).join(' · ') || '未知';
   $('#hardware-serial').textContent = identity.serial || '未知';
+  $('#system-device-model').textContent = identity.display_model || identity.model || '未知';
+  $('#system-device-version').textContent = [identity.vpd_version, identity.hardware_family].filter(Boolean).join(' · ') || '未知';
+  $('#system-device-platform').textContent = [identity.platform, identity.hw_version === null || identity.hw_version === undefined ? null : `hw_version ${identity.hw_version}`].filter(Boolean).join(' · ') || '未知';
+  $('#system-device-serial').textContent = identity.serial || '未知';
   $('#hostname').textContent = data.hostname;
   $('#cpu-usage').textContent = data.cpu.usage_percent === null ? '采样中' : `${data.cpu.usage_percent}%`;
   $('#cpu-note').textContent = `${data.cpu.cores} 核`;
@@ -222,6 +226,7 @@ function renderTelemetry(data) {
   $('#cpu-load').textContent = data.cpu.load.join(' / ');
   $('#kernel').textContent = data.kernel;
   $('#uptime').textContent = formatUptime(data.uptime_seconds);
+  $('#system-info-uptime').textContent = formatUptime(data.uptime_seconds);
   $('#memory-usage').textContent = `${data.memory.usage_percent}%`;
   $('#memory-note').textContent = `${formatBytes(data.memory.used)} / ${formatBytes(data.memory.total)}`;
 
@@ -272,6 +277,7 @@ function renderTelemetry(data) {
     const summaryPoints = switchPoints.length ? switchPoints : sdk.temperatures;
     const maximum = Math.max(...summaryPoints.map((item) => item.celsius));
     $('#overview-switch-temp').textContent = `${maximum.toFixed(1)}°C`;
+    $('#cooling-switch-temp').textContent = `${maximum.toFixed(1)}°C`;
     $('#overview-switch-temp').parentElement.classList.toggle('warning', maximum >= 85 && maximum < 100);
     $('#overview-switch-temp').parentElement.classList.toggle('danger', maximum >= 100);
     $('#sensor-age').textContent = new Date(sdk.sampled * 1000).toLocaleTimeString();
@@ -283,16 +289,14 @@ function renderTelemetry(data) {
     sdk.voltages.forEach((item) => $('#voltage-sensors').append(sensorBox(item.name.replace('VOLTAGE SENSOR ', ''), item.volts, ' V', 3)));
   } else {
     $('#overview-switch-temp').textContent = sdk.state === 'error' ? '读取失败' : '读取中';
+    $('#cooling-switch-temp').textContent = sdk.state === 'error' ? '读取失败' : '读取中';
     $('#sensor-age').textContent = sdk.state === 'error' ? 'SDK 错误' : '等待 SDK';
     const message = document.createElement('span'); message.className = 'muted'; message.textContent = sdk.error || '读取中…'; switchGrid.append(message);
   }
 
-  const fanData = data.fans || { state: 'not-detected', fans: [] }; const fanGrid = $('#fan-sensors'); fanGrid.replaceChildren();
-  if (fanData.fans.length) fanData.fans.forEach((item) => {
-    const suffix = item.signal === false ? ' RPM（无 TACH 脉冲）' : ' RPM';
-    fanGrid.append(sensorBox(item.label || 'System Fan', item.rpm, suffix, 0));
-  });
-  else fanGrid.append(Object.assign(document.createElement('span'), { className: 'muted fan-note', textContent: '未检测到转速信号' }));
+  const fanData = data.fans || { state: 'not-detected', fans: [] };
+  const fan = fanData.fans[0];
+  $('#cooling-fan-rpm').textContent = fan ? `${Math.round(fan.rpm)} RPM` : '未检测到';
 
 }
 
@@ -1295,13 +1299,48 @@ async function factoryReset() {
   }
 }
 
+function renderServiceHealth(health) {
+  const status = health.status || 'error';
+  const dot = $('#service-dot');
+  dot.classList.toggle('up', status === 'healthy');
+  dot.classList.toggle('starting', status === 'initializing');
+  dot.classList.toggle('down', status === 'error');
+  $('#service-text').textContent = status === 'healthy' ? '交换服务' : (status === 'initializing' ? '交换服务 · 启动中' : '交换服务 · 异常');
+  $('#system-service-status').textContent = status === 'healthy' ? '正常' : (status === 'initializing' ? '初始化中' : `异常 · ${health.service || 'unknown'}`);
+  $('#system-service-uio').textContent = health.uio_ready ? '已就绪' : '不可用';
+  $('#system-service-testpoint').textContent = health.testpoint_ready ? '已就绪' : '未就绪';
+}
+
+async function loadServiceHealth() {
+  try { renderServiceHealth(await api('/api/health')); } catch (error) { renderServiceHealth({ status: 'error', service: 'unreachable' }); }
+}
+
+function renderSystemInformation(info) {
+  const components = info.components || {};
+  const storageInfo = info.storage || {};
+  const storage = storageInfo.total ? `${formatBytes(storageInfo.used)} / ${formatBytes(storageInfo.total)} · ${storageInfo.usage_percent}%` : '未知';
+  $('#system-info-hostname').textContent = info.hostname || '未知';
+  $('#system-info-os').textContent = info.os || '未知';
+  $('#system-info-kernel').textContent = info.kernel || '未知';
+  $('#system-info-bios').textContent = info.bios || '未知';
+  $('#system-info-storage').textContent = storage;
+  $('#storage').textContent = storage;
+  $('#component-manager').textContent = components.manager || '未知';
+  $('#component-ies').textContent = components.ies_sdk || '未知';
+  $('#component-testpoint').textContent = components.testpoint || '未知';
+  const driver = components.fm10k_uio || {};
+  $('#component-driver').textContent = `${driver.version || '未知'}${driver.loaded ? ' · 已加载' : ' · 未加载'}`;
+}
+
 async function loadState(resetDraft = true) {
   const state = await api('/api/state'); ui.state = state; ui.csrf = state.csrf;
   if (resetDraft) { ui.topology = Object.fromEntries(state.groups.map((group) => [group.key, clone(choiceFor(group))])); ui.vlans = clone(state.vlans); }
   ui.l2 = clone(state.l2);
   ui.l2Saved = clone(state.l2);
   ui.fan = clone(state.fan_control);
-  const active = state.service === 'active'; $('#service-dot').classList.toggle('up', active); $('#service-dot').classList.toggle('down', !active); $('#service-text').textContent = active ? '交换服务' : `交换服务 · ${state.service}`; $('#version-text').textContent = `WebUI ${state.version}`;
+  renderServiceHealth(state.service_health || { status: state.service === 'active' ? 'healthy' : 'error', service: state.service });
+  renderSystemInformation(state.system_information || {});
+  $('#version-text').textContent = `管理软件 ${state.version}`;
   $('#account-username').value = state.username || '';
   if (state.system_settings) $('#system-hostname').value = state.system_settings.hostname || '';
   renderPorts(); renderStatsPortSelect(); renderVlans(); renderL2(); renderFanCurve();
@@ -1376,5 +1415,5 @@ enhanceNumberInputs(document);
   const initialPage = pageFromLocation();
   setPage(initialPage, false);
   if (window.location.pathname !== PAGE_PATHS[initialPage]) window.history.replaceState({ page: initialPage }, '', PAGE_PATHS[initialPage]);
-  try { await loadState(); await loadTelemetry(); setTelemetryInterval(TELEMETRY_INTERVAL_SECONDS); setLogInterval(); } catch (error) { showToast(`加载失败：${error.message}`); }
+  try { await loadState(); await loadTelemetry(); setTelemetryInterval(TELEMETRY_INTERVAL_SECONDS); ui.healthTimer = window.setInterval(loadServiceHealth, 10000); setLogInterval(); } catch (error) { showToast(`加载失败：${error.message}`); }
 })();

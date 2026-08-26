@@ -1,21 +1,20 @@
 # 版本规则
 
-项目中的组件独立版本化，不再用一个版本号同时表示部署逻辑、WebUI、驱动和私有 SDK。
+仓库根目录的 `VERSION` 是管理软件和 deploy-kit 的唯一版本来源。当前正式版本为 `1.1.0`。
 
 | 组件 | 当前版本 | 规则 |
 | --- | --- | --- |
-| deploy-kit | `1.0.0` | 正式版本使用 SemVer；不兼容的安装/打包契约提升主版本，兼容功能提升次版本，兼容修复提升补丁版本 |
-| WebUI | `1.0.0` | 用户功能或 API/schema 变化提升次版本，兼容 UI/逻辑修复提升补丁版本；开发构建保留 `-dev` |
+| 管理软件与 deploy-kit | `1.1.0` | 共用唯一版本；不兼容变化提升主版本，新功能提升次版本，兼容修复提升补丁版本 |
 | legacy SDK runtime 包 | `2.1.0` | 2.0.0 起使用身份无关 rootfs 格式；不兼容格式/ABI 提升主版本，兼容 profile 元数据或 SDK 内容更新提升次版本，纯打包修复提升补丁版本 |
-| DKMS 驱动 | `1.1.0` | 按内核模块源码和 ABI 独立版本化 |
+| fm10k UIO/IES 驱动 | `6.12.101-ies1` | Linux 6.12.101 主线源码基线，加第一版 IES/UIO 移植；模块、UIO 与 DKMS 使用同一版本 |
 
-配置 schema、platform schema 和 runtime package format 使用单调递增整数，只在读取方无法兼容旧格式时增加。
+日常开发在周期开始时确定下一个版本并加 `-dev`，只提交到 `dev`。普通提交和小修复不会创建 Release；只有维护者明确说“发布”后，才移除 `-dev`、合并到 `main`、创建标签和 GitHub Release。
 
-日常开发只提交到 `dev`，不因小修复自动创建 Release。只有维护者明确确认发布时，才确定正式版本、合并到 `main`、创建标签和 GitHub Release。`main` 表示最近一次确认发布的稳定状态。
-
-runtime `1.0.0` 是其独立制品格式的首个稳定版本，不等同于 Intel IES/TestPoint 的产品版本；实际 SDK 版本继续单独记录为 `4.3`。
+runtime 的制品版本不等同于 Intel IES/TestPoint 的产品版本，也不在管理界面展示。界面从运行系统读取 IES SDK、TestPoint 和 fm10k-uio 的实际版本。
 
 runtime `2.0.0` 删除了 1.x 直接嵌套的整板备份结构，仅保留 `/opt/silicom-legacy`。它不再携带来源板卡的 VPD、DMI、序列号、OS 审计或重复 platform 配置，因此按不兼容制品格式提升主版本。
+
+Intel `fm10k-0.27.1` 是 UIO/IES 移植时使用的原厂参考源码，不是当前混合驱动的完整版本。旧的 `fm10k-uio/1.1.0` 只是误设的 DKMS 包装标识，升级时会迁移为上面的真实版本。
 
 runtime `2.1.0` 不改 SDK 内容，只把兼容目标从散热器外观代称改为机器可识别的 `sil001-hw4-b0` platform profile。
 

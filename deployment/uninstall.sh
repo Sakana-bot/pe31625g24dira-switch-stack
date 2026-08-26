@@ -60,9 +60,11 @@ rm -rf -- /opt/pe31625g24dira-switch-manager /run/pe31625g24dira-testpoint
 modprobe -r fm10k >/dev/null 2>&1 || true
 
 if command -v dkms >/dev/null 2>&1; then
+    dkms remove fm10k-uio/6.12.101-ies1 --all >/dev/null 2>&1 || true
     dkms remove fm10k-uio/1.1.0 --all >/dev/null 2>&1 || true
 fi
 rm -rf -- /usr/src/fm10k-uio-1.1.0
+rm -rf -- /usr/src/fm10k-uio-6.12.101-ies1
 depmod -a
 update-initramfs -u -k "$(uname -r)" >/dev/null 2>&1 || true
 

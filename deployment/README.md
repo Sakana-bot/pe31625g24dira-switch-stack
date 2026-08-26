@@ -2,7 +2,7 @@
 
 > **风险提示：**本项目全部代码由 ChatGPT 生成，不保证正确性、可靠性、安全性或可用性。请先审计并准备本地恢复路径。
 
-当前部署包版本：`1.0.0`；legacy SDK runtime 包版本：`2.1.0`。
+当前版本：`1.1.0`。管理软件与 deploy-kit 共用一个版本号；legacy SDK runtime 独立提供，日常升级不会重复安装。
 
 ## 文件说明
 
@@ -104,7 +104,7 @@ sudo bash pe31625g24dira-deploy-kit-*/deployment/upgrade-debian13.sh --apply
 
 也可以在 WebUI 的“备份与升级”页面上传同一份通用部署包。当前更新包只提供 SHA-256 完整性校验，尚未提供发布者数字签名，不应安装来源不明的包。
 
-组件版本彼此独立，详见项目根目录的 `VERSIONING.md`。
+版本与发布规则见项目根目录的 `VERSIONING.md`。
 
 ## 其他 Linux 发行版
 

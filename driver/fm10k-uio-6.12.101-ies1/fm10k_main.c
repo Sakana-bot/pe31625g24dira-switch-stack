@@ -12,13 +12,16 @@
 #include "fm10k.h"
 
 #define DRV_SUMMARY	"Intel(R) Ethernet Switch Host Interface Driver"
+#define DRV_VERSION	"6.12.101-ies1"
 char fm10k_driver_name[] = "fm10k";
+const char fm10k_driver_version[] = DRV_VERSION;
 static const char fm10k_driver_string[] = DRV_SUMMARY;
 static const char fm10k_copyright[] =
 	"Copyright(c) 2013 - 2019 Intel Corporation.";
 
 MODULE_DESCRIPTION(DRV_SUMMARY);
 MODULE_LICENSE("GPL v2");
+MODULE_VERSION(DRV_VERSION);
 
 /* single workqueue for entire fm10k driver */
 struct workqueue_struct *fm10k_workqueue;
