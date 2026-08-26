@@ -1329,7 +1329,7 @@ function renderSystemInformation(info) {
   $('#component-ies').textContent = components.ies_sdk || '未知';
   $('#component-testpoint').textContent = components.testpoint || '未知';
   const driver = components.fm10k_uio || {};
-  $('#component-driver').textContent = `${driver.version || '未知'}${driver.loaded ? ' · 已加载' : ' · 未加载'}`;
+  $('#component-driver').textContent = driver.version || '未知';
 }
 
 async function loadState(resetDraft = true) {

@@ -102,6 +102,15 @@ try {
         [System.Text.UTF8Encoding]::new($false)
     )
 
+    # A kit may be built from a Windows checkout. Linux shell, DKMS and C
+    # sources must retain LF endings regardless of the local Git setting.
+    Get-ChildItem -LiteralPath $stage -File -Recurse | Where-Object {
+        $_.Extension -in @('.sh', '.c', '.h') -or $_.Name -in @('dkms.conf', 'Makefile')
+    } | ForEach-Object {
+        $content = [System.IO.File]::ReadAllText($_.FullName).Replace("`r`n", "`n")
+        [System.IO.File]::WriteAllText($_.FullName, $content, [System.Text.UTF8Encoding]::new($false))
+    }
+
     $manifestLines = Get-ChildItem -LiteralPath $stage -File -Recurse | ForEach-Object {
         $relative = $_.FullName.Substring($stage.Length + 1).Replace('\', '/')
         $hash = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()

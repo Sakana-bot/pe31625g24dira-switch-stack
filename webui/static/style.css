@@ -72,6 +72,7 @@ main{padding:22px 28px 36px;max-width:1600px;margin:auto}
 .panel-head p{font-size:var(--font-body);color:var(--muted);margin:4px 0 0;line-height:1.5}
 .info-list{margin:0;padding:9px 18px}
 .info-list>div{display:grid;grid-template-columns:105px 1fr;gap:12px;padding:8px 0;border-bottom:1px solid #eff0f4}
+.component-info-list>div{grid-template-columns:150px minmax(0,1fr)}
 .info-list>div:last-child{border:0}
 .info-list dt{color:var(--muted);font-size:var(--font-body);font-weight:400}
 .info-list dd{margin:0;text-align:right;font-size:var(--font-body);font-weight:400;word-break:break-word}
