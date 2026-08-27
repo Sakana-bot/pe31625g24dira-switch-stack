@@ -59,6 +59,9 @@ sudo bash deployment/upgrade.sh --apply
 
 普通升级只更新驱动、交换控制代码和 WebUI，并保留已安装的 runtime 与用户配置。
 WebUI 的“备份与升级”页面也可直接检查 GitHub 上的最新正式版本，完成校验与差异审计后再由用户确认更新。
+需要参加 RC 测试时，可在检查前启用“包含预发布版本”；降级默认禁止，只有显式启用“允许降级”后才可执行。
+
+如果旧版本 WebUI 提示“部署包不完整”，请解压该版本部署包并执行包内实际提供的升级脚本；早期 Debian 13 部署包使用 `deployment/upgrade-debian13.sh --apply`，当前部署包使用 `deployment/upgrade.sh --apply`。
 
 ## 其他硬件版本
 

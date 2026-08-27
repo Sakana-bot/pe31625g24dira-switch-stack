@@ -91,7 +91,7 @@ try {
     $releaseManifest = [ordered]@{
         artifact_type = 'deploy-kit'
         version = $version
-        release_status = if ($version.EndsWith('-dev')) { 'development' } else { 'stable' }
+        release_status = if ($version.EndsWith('-dev')) { 'development' } elseif ($version -match '-rc(?:[.-]|$)') { 'prerelease' } else { 'stable' }
         embedded_platform_profiles = @('sil001-hw4-b0')
         runtime_required_for_fresh_install = $true
     }
