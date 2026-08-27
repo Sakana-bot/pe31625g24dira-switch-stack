@@ -19,26 +19,39 @@ release_json="$work/release.json"
 curl --fail --location --silent --show-error "${headers[@]}" \
     "https://api.github.com/repos/$REPOSITORY/releases/latest" -o "$release_json"
 
-readarray -t asset_data < <(python3 - "$release_json" "$MODE" <<'PY'
+runtime_release_json="$release_json"
+if [ "$MODE" = install ]; then
+    runtime_release_tag=${PE31625G24DIRA_RUNTIME_RELEASE_TAG:-v1.0.0}
+    runtime_release_json="$work/runtime-release.json"
+    curl --fail --location --silent --show-error "${headers[@]}" \
+        "https://api.github.com/repos/$REPOSITORY/releases/tags/$runtime_release_tag" \
+        -o "$runtime_release_json"
+fi
+
+readarray -t asset_data < <(python3 - "$release_json" "$MODE" "$runtime_release_json" <<'PY'
 import json, re, sys
 release = json.load(open(sys.argv[1], encoding="utf-8"))
 mode = sys.argv[2]
+runtime_release = json.load(open(sys.argv[3], encoding="utf-8"))
 assets = {a["name"]: a["browser_download_url"] for a in release.get("assets", [])}
-def emit(pattern):
-    matches = [(name, url) for name, url in assets.items() if re.fullmatch(pattern, name)]
+runtime_assets = {
+    a["name"]: a["browser_download_url"] for a in runtime_release.get("assets", [])
+}
+def emit(source, pattern):
+    matches = [(name, url) for name, url in source.items() if re.fullmatch(pattern, name)]
     if len(matches) != 1:
         raise SystemExit(f"expected one matching release asset, found {len(matches)}")
     name, url = matches[0]
     sidecar = name + ".sha256"
-    if sidecar not in assets:
+    if sidecar not in source:
         raise SystemExit("release checksum asset is missing")
     print(name)
     print(url)
-    print(assets[sidecar])
+    print(source[sidecar])
 
-emit(r"pe31625g24dira-deploy-kit-.*\.tar\.gz$")
+emit(assets, r"pe31625g24dira-deploy-kit-.*\.tar\.gz$")
 if mode == "install":
-    emit(r"pe31625g24dira-legacy-sdk-runtime-.*\.tar\.gz$")
+    emit(runtime_assets, r"pe31625g24dira-legacy-sdk-runtime-.*\.tar\.gz$")
 PY
 )
 

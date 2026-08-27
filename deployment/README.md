@@ -4,6 +4,8 @@
 
 当前版本：`1.2.0`。管理软件与 deploy-kit 共用一个版本号；legacy SDK runtime 独立提供，日常升级不会重复安装。
 
+一键安装默认从最新 Release 获取 deploy-kit，从 `v1.0.0` 获取稳定的 runtime 2.1.0。可通过环境变量 `PE31625G24DIRA_RUNTIME_RELEASE_TAG` 为私有分支或未来受控 runtime 更新指定其他 tag；普通管理软件 Release 不重复上传相同 runtime。
+
 ## 文件说明
 
 - `pe31625g24dira-deploy-kit-*.tar.gz`：通用安装与升级程序，包含驱动、交换服务、Switch Manager 和 `sil001-hw4-b0` 的原厂 `6×100G` platform 母版，不包含 legacy SDK。

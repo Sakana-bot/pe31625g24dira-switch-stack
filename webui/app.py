@@ -2955,8 +2955,8 @@ def validate_poweroff_request(body):
 def system_log_command(source):
     commands = {
         "system": ["/bin/journalctl", "-b", "--no-pager", "-n", "500", "-o", "short-iso"],
-        # Match LuCI's kernel log: expose the raw kernel ring buffer, including
-        # the boot-relative timestamps also shown on the local console.
+        # Expose the raw kernel ring buffer, including the boot-relative
+        # timestamps also shown on the local console.
         "kernel": ["/usr/bin/dmesg", "--color=never"],
         "switch": ["/bin/journalctl", "-b", "-u", SERVICE, "--no-pager", "-n", "500", "-o", "short-iso"],
     }

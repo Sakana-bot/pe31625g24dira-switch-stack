@@ -12,7 +12,7 @@ Silicom PE31625G24DIRA Switch-on-NIC 的社区管理软件，可将板载 Intel 
 - Python：3.9 或更高版本
 - 已内置 profile：`sil001-hw4-b0`（PCI subsystem `1374:01d0`，VPD 为 PE31625G24DIRA-MPS B0）
 
-安装器会读取硬件身份。匹配 `sil001-hw4-b0` 时自动使用 deploy-kit 内的 platform，并按需下载同一 Release 的 legacy SDK runtime，不需要原系统备份；其他 platform 会拒绝自动部署，需另行提供匹配的 platform bundle 与 runtime。
+安装器会读取硬件身份。匹配 `sil001-hw4-b0` 时自动使用 deploy-kit 内的 platform，并按需下载项目首次正式发布的稳定 legacy SDK runtime，不需要原系统备份；日常 Release 不重复发布 runtime。其他 platform 会拒绝自动部署，需另行提供匹配的 platform bundle 与 runtime。
 
 ## 安装
 
