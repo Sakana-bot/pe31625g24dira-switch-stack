@@ -9,9 +9,10 @@ usage() {
     cat <<'EOF'
 Usage: sudo bash deployment/uninstall.sh --yes [options]
 
-Removes the Switch Stack services, WebUI, configuration, platform files and
-fm10k-uio DKMS increment. The management network configuration and packages
-installed through apt are preserved.
+Removes the Switch Stack services, WebUI, configuration, platform files,
+fm10k-uio DKMS increment and the project-owned maintenance-address fragment.
+The distribution network manager, pre-existing network configuration and
+packages installed through apt are preserved.
 
 Options:
   --keep-runtime   Preserve /opt/silicom-legacy and /usr/local/rrc
@@ -57,14 +58,25 @@ rm -f -- \
 
 rm -rf -- /opt/pe31625g24dira-switch-manager /run/pe31625g24dira-testpoint
 
+log "removing only the project-owned maintenance-address configuration"
+rm -f -- \
+    /etc/netplan/99-pe31625g24dira-maintenance.yaml \
+    /etc/network/interfaces.d/pe31625g24dira-maintenance \
+    /etc/systemd/network/80-pe31625g24dira-maintenance.network
+if command -v nmcli >/dev/null 2>&1; then
+    nmcli connection delete pe31625g24dira-maintenance >/dev/null 2>&1 || true
+fi
+
 modprobe -r fm10k >/dev/null 2>&1 || true
 
 if command -v dkms >/dev/null 2>&1; then
     dkms remove fm10k-uio/6.12.101-ies1 --all >/dev/null 2>&1 || true
+    dkms remove fm10k-uio/6.12.101-ies2 --all >/dev/null 2>&1 || true
     dkms remove fm10k-uio/1.1.0 --all >/dev/null 2>&1 || true
 fi
 rm -rf -- /usr/src/fm10k-uio-1.1.0
 rm -rf -- /usr/src/fm10k-uio-6.12.101-ies1
+rm -rf -- /usr/src/fm10k-uio-6.12.101-ies2
 depmod -a
 update-initramfs -u -k "$(uname -r)" >/dev/null 2>&1 || true
 
@@ -80,5 +92,6 @@ fi
 
 systemctl daemon-reload
 update-grub >/dev/null 2>&1 || true
-log "removed project files; management networking and distribution packages were preserved"
+log "removed project files and the project maintenance-address fragment"
+log "the distribution network manager, pre-existing networking and packages were preserved"
 log "reboot before reinstalling if /dev/uio0 or the old fm10k module remains active"

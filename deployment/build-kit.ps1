@@ -41,9 +41,9 @@ try {
     Copy-Item -LiteralPath (Join-Path $projectRoot 'webui\reference_original_6x100.cfg') `
         -Destination (Join-Path $smallB0Destination 'fm_platform_attributes.cfg')
 
-    $driverDestination = Join-Path $stage 'driver\fm10k-uio-6.12.101-ies1'
+    $driverDestination = Join-Path $stage 'driver\fm10k-uio-6.12.101-ies2'
     New-Item -ItemType Directory -Path $driverDestination -Force | Out-Null
-    Copy-Item -Path (Join-Path $projectRoot 'driver\fm10k-uio-6.12.101-ies1\*') -Destination $driverDestination -Recurse
+    Copy-Item -Path (Join-Path $projectRoot 'driver\fm10k-uio-6.12.101-ies2\*') -Destination $driverDestination -Recurse
 
     $switchDestination = Join-Path $stage 'switch_service'
     New-Item -ItemType Directory -Path $switchDestination -Force | Out-Null

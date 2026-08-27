@@ -12,7 +12,7 @@
 #include "fm10k.h"
 
 #define DRV_SUMMARY	"Intel(R) Ethernet Switch Host Interface Driver"
-#define DRV_VERSION	"6.12.101-ies1"
+#define DRV_VERSION	"6.12.101-ies2"
 char fm10k_driver_name[] = "fm10k";
 const char fm10k_driver_version[] = DRV_VERSION;
 static const char fm10k_driver_string[] = DRV_SUMMARY;

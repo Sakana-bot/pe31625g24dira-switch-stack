@@ -27,7 +27,7 @@ RUNTIME_MANIFEST_SOURCE=""
 
 usage() {
     cat <<'EOF'
-Usage: sudo bash deployment/deploy-debian13.sh [options]
+Usage: sudo bash deployment/deploy.sh [options]
 
 Options:
   --audit                         Validate and inspect without changing anything
@@ -42,6 +42,10 @@ Options:
                                   never permits deployment without a real config/runtime
   --reboot --yes                  Reboot automatically after successful deployment
   --yes                           Confirm explicitly requested disruptive actions
+
+The same installer supports Debian and Ubuntu systems that provide Python 3.9+
+and matching kernel headers. It preserves the installed network manager and
+adds only the fixed maintenance address 192.168.255.2/24 to the second NIC.
 EOF
 }
 
@@ -66,6 +70,11 @@ while [ "$#" -gt 0 ]; do
 done
 
 [ "$(id -u)" -eq 0 ] || die "run as root"
+command -v python3 >/dev/null 2>&1 || die "Python 3.9 or newer is required"
+python3 - <<'PY' || die "Python 3.9 or newer is required"
+import sys
+raise SystemExit(0 if sys.version_info >= (3, 9) else 1)
+PY
 [ -z "$BUNDLE" ] || [ -f "$BUNDLE" ] || die "bundle not found: $BUNDLE"
 [ -z "$RUNTIME" ] || [ -f "$RUNTIME" ] || die "runtime package not found: $RUNTIME"
 [ -z "$RUNTIME" ] || [ -z "$RUNTIME_URL" ] || die "use only one of --runtime and --runtime-url"
@@ -78,8 +87,9 @@ case "$PLATFORM_PROFILE" in auto|sil001-hw4-b0|bundle) ;; *) die "--platform-pro
 for path in \
     "$KIT_ROOT/RELEASE-MANIFEST.json" \
     "$KIT_ROOT/VERSION" \
-    "$KIT_ROOT/driver/fm10k-uio-6.12.101-ies1/dkms.conf" \
+    "$KIT_ROOT/driver/fm10k-uio-6.12.101-ies2/dkms.conf" \
     "$KIT_ROOT/deployment/runtime-package.sh" \
+    "$KIT_ROOT/deployment/configure-maintenance-interface.sh" \
     "$KIT_ROOT/platforms/sil001-hw4-b0/fm_platform_attributes.cfg" \
     "$KIT_ROOT/switch_service/pe31625g24dira-fan-init.service" \
     "$KIT_ROOT/switch_service/pe31625g24dira-switch.service" \
@@ -289,7 +299,7 @@ audit_report() {
     printf '  deployment kit:   OK\n'
     printf '  target OS:        %s %s\n' "$os_id" "$os_version"
     if command -v dkms >/dev/null 2>&1; then
-        state=$(dkms status 2>/dev/null | grep 'fm10k-uio/6.12.101-ies1' || true)
+        state=$(dkms status 2>/dev/null | grep 'fm10k-uio/6.12.101-ies2' || true)
         printf '  DKMS:             %s\n' "${state:-not installed}"
     else
         printf '  DKMS:             command unavailable\n'
@@ -312,14 +322,17 @@ if [ "$AUDIT" -eq 1 ]; then
     exit 0
 fi
 
-[ "$os_id" = debian ] && [ "$os_version" = 13 ] || die "write mode requires Debian 13"
+case "$os_id" in
+    debian|ubuntu) ;;
+    *) die "write mode currently supports Debian and Ubuntu; found $os_id $os_version" ;;
+esac
+[ "$(uname -m)" = x86_64 ] || die "write mode requires x86_64"
 
 log "generating initial fixed 24-slot logical-port model"
 FIXED_PLATFORM_DIR=$(mktemp -d "${TMPDIR:-/var/tmp}/pe31625g24dira-platform.XXXXXX")
 active_platform="$FIXED_PLATFORM_DIR/fm_platform_attributes.cfg"
 python3 "$SCRIPT_DIR/generate-fixed-platform.py" \
     "$KIT_ROOT/webui" "$source_platform" "$active_platform"
-[ "$(uname -m)" = x86_64 ] || die "write mode requires x86_64"
 
 BACKUP_ROOT="/var/backups/pe31625g24dira/deploy-$(date -u +%Y%m%dT%H%M%SZ)"
 mkdir -p "$BACKUP_ROOT/files"
@@ -336,81 +349,61 @@ for path in \
     /usr/local/rrc \
     /usr/src/fm10k-uio-1.1.0 \
     /usr/src/fm10k-uio-6.12.101-ies1 \
+    /usr/src/fm10k-uio-6.12.101-ies2 \
     /usr/share/netfab/fm_platform_attributes.cfg \
-    /usr/share/netfab/fm_platform_attributes_silicom.cfg \
     /usr/share/netfab/fm_platform_attributes_pe31625g24dira.cfg \
-    /etc/modules-load.d/fm10840.conf \
     /etc/modules-load.d/fm10k-uio.conf \
-    /etc/network/interfaces \
-    /etc/default/grub.d/99-fm10840.cfg \
+    /etc/network/interfaces.d/pe31625g24dira-maintenance \
+    /etc/netplan/99-pe31625g24dira-maintenance.yaml \
+    /etc/NetworkManager/system-connections/pe31625g24dira-maintenance.nmconnection \
+    /etc/systemd/network/80-pe31625g24dira-maintenance.network \
     /etc/default/grub.d/99-pe31625g24dira.cfg; do
     backup_path "$path"
 done
 
-log "installing Debian dependencies"
+log "installing Debian/Ubuntu build and runtime dependencies"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
 apt-get install -y --no-install-recommends \
-    build-essential ca-certificates dkms ethtool i2c-tools ifupdown iproute2 kmod libcrypt1 \
-    "linux-headers-$(uname -r)" pciutils procps python3 rsync util-linux
-dpkg --purge ifupdown2 >/dev/null 2>&1 || true
+    build-essential ca-certificates dkms i2c-tools iproute2 kmod libcrypt1 \
+    "linux-headers-$(uname -r)" python3 rsync util-linux
 
-log "restoring original management interface layout"
-install -m 644 "$KIT_ROOT/deployment/pe31625g24dira-interfaces" /etc/network/interfaces
+log "checking fm10k UIO/IES source against kernel $(uname -r)"
+install -d -m 755 /usr/src/fm10k-uio-6.12.101-ies2
+rsync -a --delete "$KIT_ROOT/driver/fm10k-uio-6.12.101-ies2/" /usr/src/fm10k-uio-6.12.101-ies2/
+dkms remove fm10k-uio/1.1.0 --all >/dev/null 2>&1 || true
+dkms remove fm10k-uio/6.12.101-ies1 --all >/dev/null 2>&1 || true
+dkms remove fm10k-uio/6.12.101-ies2 --all >/dev/null 2>&1 || true
+dkms add fm10k-uio/6.12.101-ies2
+dkms build fm10k-uio/6.12.101-ies2 -k "$(uname -r)"
+log "kernel compatibility check passed"
 
-log "removing all superseded development installations and local configuration"
+log "configuring the fixed maintenance address without replacing the system network manager"
+bash "$KIT_ROOT/deployment/configure-maintenance-interface.sh"
+
+log "replacing any existing project installation and local configuration"
 for svc in \
-    rrcd.service netfabagent.service hmonagent.service \
-    fm10840-board-init.service fm10840-dumb-switch.service fm10840-webui.service \
     pe31625g24dira-board-init.service pe31625g24dira-switch.service \
     pe31625g24dira-fan-init.service pe31625g24dira-switch-manager.service; do
     systemctl disable --now "$svc" 2>/dev/null || true
 done
 rm -f -- \
-    /etc/systemd/system/fm10840-board-init.service \
-    /etc/systemd/system/fm10840-dumb-switch.service \
-    /etc/systemd/system/fm10840-webui.service \
     /etc/systemd/system/pe31625g24dira-board-init.service \
     /etc/systemd/system/pe31625g24dira-switch.service \
     /etc/systemd/system/pe31625g24dira-fan-init.service \
     /etc/systemd/system/pe31625g24dira-switch-manager.service \
-    /usr/local/sbin/fm10840-board-init \
-    /usr/local/sbin/fm10840-queue-fan-init \
-    /usr/local/sbin/fm10840-testpoint-wrapper \
     /usr/local/sbin/pe31625g24dira-board-init \
     /usr/local/sbin/pe31625g24dira-queue-fan-init \
-    /usr/local/sbin/pe31625g24dira-testpoint-wrapper \
-    /etc/modules-load.d/fm10840.conf \
-    /etc/default/grub.d/99-fm10840.cfg \
-    /usr/share/netfab/fm_platform_attributes_silicom.cfg
-rm -rf -- \
-    /opt/fm10840-webui /etc/fm10840 /etc/fm10840-webui \
-    /opt/pe31625g24dira-switch-manager /etc/pe31625g24dira
+    /usr/local/sbin/pe31625g24dira-testpoint-wrapper
+rm -rf -- /opt/pe31625g24dira-switch-manager /etc/pe31625g24dira
 systemctl daemon-reload
 
-log "preserving the selected platform/runtime provenance"
-original_dir="/var/lib/pe31625g24dira/original-board/$BUNDLE_ID"
-rm -rf -- "$original_dir"
-mkdir -p "$original_dir"
-mkdir -p "$original_dir/metadata" "$original_dir/factory-rootfs"
-if [ -n "$BUNDLE_ROOT" ]; then
-    cp -a "$BUNDLE_ROOT/manifest.env" "$BUNDLE_ROOT/SHA256SUMS" "$original_dir/"
-    [ ! -d "$BUNDLE_ROOT/metadata" ] || cp -a "$BUNDLE_ROOT/metadata/." "$original_dir/metadata/"
-fi
-[ -z "$RUNTIME_MANIFEST_SOURCE" ] || install -m 644 "$RUNTIME_MANIFEST_SOURCE" "$original_dir/RUNTIME-MANIFEST.json"
-install -d -m 755 "$original_dir/factory-rootfs/usr/share/netfab"
-install -m 644 "$source_platform" \
-    "$original_dir/factory-rootfs/usr/share/netfab/fm_platform_attributes.cfg"
-install -m 644 "$KIT_ROOT/RELEASE-MANIFEST.json" "$original_dir/RELEASE-MANIFEST.json"
-install -m 644 "$KIT_ROOT/VERSION" "$original_dir/VERSION"
+rm -rf -- /var/lib/pe31625g24dira/original-board
+rm -f -- /var/lib/pe31625g24dira/runtime-manifest.json
 
 log "restoring controlled Perl 5.22 / legacy SDK runtime"
 mkdir -p /opt/silicom-legacy
 rsync -a --delete "$legacy_source/" /opt/silicom-legacy/
-if [ -n "$RUNTIME_MANIFEST_SOURCE" ]; then
-    install -d -m 755 /var/lib/pe31625g24dira
-    install -m 644 "$RUNTIME_MANIFEST_SOURCE" /var/lib/pe31625g24dira/runtime-manifest.json
-fi
 if [ -L /usr/local/rrc ]; then
     rm -f -- /usr/local/rrc
 elif [ -e /usr/local/rrc ]; then
@@ -433,15 +426,10 @@ for path in "$KIT_ROOT"/switch_service/*.tp; do
     install -m 600 "$path" "/etc/pe31625g24dira/$(basename "$path")"
 done
 
-log "building and installing fm10k 6.12.101-ies1 for $(uname -r)"
-install -d -m 755 /usr/src/fm10k-uio-6.12.101-ies1
-rsync -a --delete "$KIT_ROOT/driver/fm10k-uio-6.12.101-ies1/" /usr/src/fm10k-uio-6.12.101-ies1/
-dkms remove fm10k-uio/1.1.0 --all >/dev/null 2>&1 || true
-dkms remove fm10k-uio/6.12.101-ies1 --all >/dev/null 2>&1 || true
-dkms add fm10k-uio/6.12.101-ies1
-dkms build fm10k-uio/6.12.101-ies1 -k "$(uname -r)"
-dkms install fm10k-uio/6.12.101-ies1 -k "$(uname -r)"
+log "installing the locally built fm10k 6.12.101-ies2 module"
+dkms install fm10k-uio/6.12.101-ies2 -k "$(uname -r)"
 rm -rf -- /usr/src/fm10k-uio-1.1.0
+rm -rf -- /usr/src/fm10k-uio-6.12.101-ies1
 log "installed locally compiled DKMS driver"
 depmod -a
 update-initramfs -u -k "$(uname -r)"
@@ -552,7 +540,7 @@ else
 fi
 
 log "deployment completed; rollback copy: $BACKUP_ROOT"
-dkms status | grep 'fm10k-uio/6.12.101-ies1' || true
+dkms status | grep 'fm10k-uio/6.12.101-ies2' || true
 if [ -e /dev/uio0 ]; then
     log "UIO ready: $(cat /sys/class/uio/uio0/name 2>/dev/null || printf unknown)"
 fi

@@ -1938,17 +1938,24 @@ def _driver_version():
         output = ""
     match = re.search(r"(?:^|\n)fm10k-uio/([^,\s]+)", output)
     dkms_version = match.group(1) if match else "未知"
-    try:
-        module_version = subprocess.run(
-            ["modinfo", "-F", "version", "fm10k"],
-            capture_output=True,
-            text=True,
-            timeout=3,
-            check=False,
-        ).stdout.strip()
-    except (OSError, subprocess.TimeoutExpired):
-        module_version = ""
     loaded = Path("/sys/module/fm10k").exists() and Path("/dev/uio0").exists()
+    module_version = ""
+    if loaded:
+        try:
+            module_version = read_text("/sys/module/fm10k/version").strip()
+        except OSError:
+            pass
+    if not module_version:
+        try:
+            module_version = subprocess.run(
+                ["modinfo", "-F", "version", "fm10k"],
+                capture_output=True,
+                text=True,
+                timeout=3,
+                check=False,
+            ).stdout.strip()
+        except (OSError, subprocess.TimeoutExpired):
+            module_version = ""
     return {
         "version": module_version or dkms_version,
         "loaded": loaded,
@@ -2894,7 +2901,7 @@ def write_requested(config, requested):
 
 
 def write_factory_configuration(config):
-    """Restore product defaults without touching Debian or management networking."""
+    """Restore product defaults without touching the host OS or management networking."""
     base_platform = read_text(config["topology_base"])
     factory_topology = {
         group["key"]: {"layout": "bonded", "speed": 100000}
@@ -3089,7 +3096,7 @@ def stage_upgrade_archive(data, filename="update.tar.gz"):
             kit_root / "KIT-SHA256SUMS",
             kit_root / "RELEASE-MANIFEST.json",
             kit_root / "VERSION",
-            kit_root / "deployment" / "upgrade-debian13.sh",
+            kit_root / "deployment" / "upgrade.sh",
             kit_root / "webui" / "app.py",
         )
         if not all(path.is_file() for path in required):
@@ -3221,7 +3228,7 @@ def pending_upgrade():
         kit_root = pending / metadata["root"]
     except (OSError, KeyError, json.JSONDecodeError):
         raise ApiError(409, "尚未上传有效更新包") from None
-    if not (kit_root / "deployment" / "upgrade-debian13.sh").is_file():
+    if not (kit_root / "deployment" / "upgrade.sh").is_file():
         raise ApiError(409, "暂存的更新包不完整")
     return metadata, kit_root
 
@@ -3232,7 +3239,7 @@ def audit_pending_upgrade():
         return {**metadata, "ok": True, "output": "已是最新版本，无需更新。"}
     try:
         result = subprocess.run(
-            ["/bin/bash", str(kit_root / "deployment" / "upgrade-debian13.sh"), "--audit"],
+            ["/bin/bash", str(kit_root / "deployment" / "upgrade.sh"), "--audit"],
             cwd=kit_root,
             capture_output=True,
             text=True,
@@ -3255,7 +3262,7 @@ def start_pending_upgrade():
     command = [
         "/bin/systemd-run", "--unit", unit, "--property=Type=oneshot", "--no-block",
         f"--working-directory={kit_root}", "/bin/bash",
-        str(kit_root / "deployment" / "upgrade-debian13.sh"), "--apply",
+        str(kit_root / "deployment" / "upgrade.sh"), "--apply",
     ]
     result = subprocess.run(command, capture_output=True, text=True, timeout=15, check=False)
     if result.returncode:

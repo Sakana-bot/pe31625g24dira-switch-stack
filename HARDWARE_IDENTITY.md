@@ -26,9 +26,9 @@
 
 所以，原镜像对它的实质描述是“Silicom RRC/bridge board 的 AP8 软件平台”，不是 `PE31625G24DIRA-AP8` 这一完整硬件型号。项目过去把两者拼在一起并不严谨，现已拆开。
 
-## Debian 13 仍能读取的板卡身份
+## 重装 Linux 后仍能读取的板卡身份
 
-FM10840 PCI function 的 sysfs `vpd` 节点不依赖原系统盘，因此重装 Debian 13 后仍可读取。当前 WebUI 的字段来源如下：
+FM10840 PCI function 的 sysfs `vpd` 节点不依赖原系统盘，因此重装 Debian 或 Ubuntu 后仍可读取。当前 WebUI 的字段来源如下：
 
 | 页面字段 | 来源 | 性质 |
 | --- | --- | --- |

@@ -7,7 +7,7 @@
 1. 以 Intel FM10840 核心温度驱动系统风扇；
 2. 关闭某个端口或整个 MPO24 对应的板载光引擎发射通道。
 
-本文记录的是当前 Debian 13 实现和已在实板上验证过的行为，不是对其他 FM10000 系列板卡的通用说明。
+本文记录的是当前 Linux 实现和已在实板上验证过的行为，不是对其他 FM10000 系列板卡的通用说明。
 
 ## 1. 先读哪些资料
 
@@ -19,7 +19,7 @@
 | 2 | [TI LM96163 数据手册](https://www.ti.com/lit/ds/symlink/lm96163.pdf) | 远端温度、12 点 LUT、PWM、TACH、回差、响应时间和寄存器初始化顺序 |
 | 3 | [`switch_service/pe31625g24dira-fan-init.tp`](switch_service/pe31625g24dira-fan-init.tp) | 当前默认风扇初始化脚本，可直接对照实际写寄存器顺序 |
 | 4 | [`webui/app.py`](webui/app.py) | `render_fan_init()`、`fan_lut_points()`、`port_admin_plan()`、`xcvr_verification_script()` 是当前实现的权威来源 |
-| 5 | [`switch_service/fm_platform_attributes_pe31625g24dira.cfg`](switch_service/fm_platform_attributes_pe31625g24dira.cfg) | 逻辑端口、`hwResourceId` 与两个光引擎 mux 分支的映射 |
+| 5 | [`webui/reference_original_6x100.cfg`](webui/reference_original_6x100.cfg) | 内置 `sil001-hw4-b0` platform 母版；逻辑端口与 `hwResourceId` 映射 |
 | 6 | [`_analysis/sdk/IES_SDK-4.3.2-20160607_6ports_15032017_14i_LINK_OPT_EEE_VRM/ies/src/platforms/libertyTrail/platform.c`](_analysis/sdk/IES_SDK-4.3.2-20160607_6ports_15032017_14i_LINK_OPT_EEE_VRM/ies/src/platforms/libertyTrail/platform.c) | 原厂 `fmFCIByteWrite()` 的写入/回读/重试，以及私有 `Tx Squelch Disable` 初始化 |
 | 7 | [`_analysis/sdk/IES_SDK-4.3.2-20160607_6ports_15032017_14i_LINK_OPT_EEE_VRM/ies/src/platforms/libertyTrail/platform_app_api.c`](_analysis/sdk/IES_SDK-4.3.2-20160607_6ports_15032017_14i_LINK_OPT_EEE_VRM/ies/src/platforms/libertyTrail/platform_app_api.c) | `fmPlatformXcvrMemRead/Write()` 如何选择光引擎并访问 `0x50` |
 | 8 | [`backups/20260809-postinstall/optical-eeprom-and-state.txt`](backups/20260809-postinstall/optical-eeprom-and-state.txt) | 两块板载 FCI 光引擎的原始 EEPROM 和初始状态留档 |

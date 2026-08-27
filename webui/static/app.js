@@ -1348,7 +1348,22 @@ async function loadState(resetDraft = true) {
   renderPorts(); renderStatsPortSelect(); renderVlans(); renderL2(); renderFanCurve();
 }
 
-document.querySelectorAll('.nav-item').forEach((button) => button.addEventListener('click', () => setPage(button.dataset.page)));
+function setMobileNavigation(open) {
+  const sidebar = $('#sidebar');
+  const toggle = $('#mobile-nav-toggle');
+  const backdrop = $('#mobile-nav-backdrop');
+  if (!sidebar || !toggle || !backdrop) return;
+  sidebar.classList.toggle('mobile-open', open);
+  backdrop.classList.toggle('visible', open);
+  toggle.setAttribute('aria-expanded', String(open));
+  toggle.setAttribute('aria-label', open ? '关闭导航' : '打开导航');
+  document.body.classList.toggle('mobile-nav-open', open);
+}
+
+document.querySelectorAll('.nav-item').forEach((button) => button.addEventListener('click', () => {
+  setPage(button.dataset.page);
+  setMobileNavigation(false);
+}));
 document.querySelectorAll('.nav-group-toggle').forEach((button) => button.addEventListener('click', () => {
   const group = button.closest('.nav-group');
   group.classList.toggle('open');
@@ -1386,7 +1401,10 @@ $('#add-vlan-modal').addEventListener('click', (event) => { if (event.target ===
 $('#factory-reset').addEventListener('click', () => { if (!ui.busy) { $('#factory-reset-submit').disabled = false; $('#factory-reset-modal').hidden = false; } });
 $('#factory-reset-cancel').addEventListener('click', closeFactoryResetModal); $('#factory-reset-submit').addEventListener('click', factoryReset);
 $('#factory-reset-modal').addEventListener('click', (event) => { if (event.target === event.currentTarget) closeFactoryResetModal(); });
-document.addEventListener('keydown', (event) => { if (event.key === 'Escape') { closePowerMenu(); closePoweroffModal(); closeRebootModal(); closeFactoryResetModal(); closeAddVlanModal(); closeTaggedVlanModal(); closePortAdminModal(); $('#upgrade-modal').hidden = true; } });
+document.addEventListener('keydown', (event) => { if (event.key === 'Escape') { setMobileNavigation(false); closePowerMenu(); closePoweroffModal(); closeRebootModal(); closeFactoryResetModal(); closeAddVlanModal(); closeTaggedVlanModal(); closePortAdminModal(); $('#upgrade-modal').hidden = true; } });
+$('#mobile-nav-toggle').addEventListener('click', () => setMobileNavigation(!$('#sidebar').classList.contains('mobile-open')));
+$('#mobile-nav-backdrop').addEventListener('click', () => setMobileNavigation(false));
+window.addEventListener('resize', () => { if (window.innerWidth > 700) setMobileNavigation(false); });
 $('#stats-port').addEventListener('change', renderPortStatistics);
 $('#mpo1-admin').addEventListener('click', () => toggleMpo(1)); $('#mpo2-admin').addEventListener('click', () => toggleMpo(2));
 $('#add-vlan-form').addEventListener('submit', (event) => { event.preventDefault(); const form = event.currentTarget; if (!form.checkValidity()) return showToast('VLAN ID 必须为 2–4094，名称不能为空'); const id = Number($('#new-vlan-id').value); const name = $('#new-vlan-name').value.trim(); if (ui.vlans.some((vlan) => vlan.id === id)) return showToast(`VLAN ${id} 已存在`); ui.vlans.push({ id, name, mtu: 1536, tagged: [], untagged: [] }); closeAddVlanModal(); renderVlans(); });

@@ -8,13 +8,13 @@ BACKUP_ROOT=""
 DRIVER_CHANGED=0
 SWITCH_CHANGED=0
 MANAGER_CHANGED=0
-REMOVE_XCVR=0
 BOOT_CHANGED=0
+STALE_METADATA=0
 NEEDS_REBOOT=0
 
 usage() {
     cat <<'EOF'
-Usage: sudo bash deployment/upgrade-debian13.sh [--audit|--apply]
+Usage: sudo bash deployment/upgrade.sh [--audit|--apply]
 
   --audit        Compare the kit with the installed system (default)
   --apply        Back up changed files, synchronize them, and restart only required services
@@ -42,7 +42,7 @@ for path in \
     "$KIT_ROOT/KIT-SHA256SUMS" \
     "$KIT_ROOT/RELEASE-MANIFEST.json" \
     "$KIT_ROOT/VERSION" \
-    "$KIT_ROOT/driver/fm10k-uio-6.12.101-ies1/dkms.conf" \
+    "$KIT_ROOT/driver/fm10k-uio-6.12.101-ies2/dkms.conf" \
     "$KIT_ROOT/webui/app.py" \
     "$KIT_ROOT/webui/l2_features.py" \
     "$KIT_ROOT/webui/runtime_state.py" \
@@ -125,10 +125,11 @@ check_file manager "$KIT_ROOT/webui/pe31625g24dira-switch-manager.service" /etc/
 if tree_difference manager "$KIT_ROOT/webui/static" /opt/pe31625g24dira-switch-manager/static; then
     MANAGER_CHANGED=1
 fi
-if [ -e /etc/pe31625g24dira/webui/xcvr.tp ]; then
-    printf '  REMOVE  %-8s %s\n' manager /etc/pe31625g24dira/webui/xcvr.tp
-    MANAGER_CHANGED=1
-    REMOVE_XCVR=1
+if [ -e /var/lib/pe31625g24dira/runtime-manifest.json ] || \
+   [ -d /var/lib/pe31625g24dira/original-board ]; then
+    printf '  REMOVE  %-8s %s\n' metadata /var/lib/pe31625g24dira/runtime-manifest.json
+    printf '  REMOVE  %-8s %s\n' metadata /var/lib/pe31625g24dira/original-board
+    STALE_METADATA=1
 fi
 check_file boot "$KIT_ROOT/deployment/99-pe31625g24dira-display.cfg" \
     /etc/default/grub.d/99-pe31625g24dira-display.cfg
@@ -143,8 +144,8 @@ for name in pe31625g24dira-fan-dump.tp pe31625g24dira-fan-pwm-test.tp pe31625g24
     check_file switch "$KIT_ROOT/switch_service/$name" "/etc/pe31625g24dira/$name"
 done
 
-if tree_difference driver "$KIT_ROOT/driver/fm10k-uio-6.12.101-ies1" /usr/src/fm10k-uio-6.12.101-ies1 || \
-   dkms status 2>/dev/null | grep -q 'fm10k-uio/1.1.0'; then
+if tree_difference driver "$KIT_ROOT/driver/fm10k-uio-6.12.101-ies2" /usr/src/fm10k-uio-6.12.101-ies2 || \
+   dkms status 2>/dev/null | grep -Eq 'fm10k-uio/(1\.1\.0|6\.12\.101-ies1)'; then
     DRIVER_CHANGED=1
 else
     log "fm10k-uio driver source matches"
@@ -153,7 +154,7 @@ log "installed legacy SDK runtime is preserved"
 
 if [ "$MANAGER_CHANGED" -eq 0 ] && [ "$SWITCH_CHANGED" -eq 0 ] && \
    [ "$BOOT_CHANGED" -eq 0 ] && \
-   [ "$DRIVER_CHANGED" -eq 0 ]; then
+   [ "$DRIVER_CHANGED" -eq 0 ] && [ "$STALE_METADATA" -eq 0 ]; then
     log "installed system already matches the supplied sources"
     exit 0
 fi
@@ -180,6 +181,7 @@ backup_path /usr/local/sbin/pe31625g24dira-testpoint-wrapper
 [ "$BOOT_CHANGED" -eq 0 ] || backup_path /etc/default/grub.d/99-pe31625g24dira-display.cfg
 [ "$DRIVER_CHANGED" -eq 0 ] || backup_path /usr/src/fm10k-uio-1.1.0
 [ "$DRIVER_CHANGED" -eq 0 ] || backup_path /usr/src/fm10k-uio-6.12.101-ies1
+[ "$DRIVER_CHANGED" -eq 0 ] || backup_path /usr/src/fm10k-uio-6.12.101-ies2
 
 rollback() {
     local status=$?
@@ -194,7 +196,7 @@ rollback() {
     [ "$BOOT_CHANGED" -eq 0 ] || update-grub
     systemctl daemon-reload
     if [ "$DRIVER_CHANGED" -eq 1 ]; then
-        dkms remove fm10k-uio/6.12.101-ies1 --all >/dev/null 2>&1
+        dkms remove fm10k-uio/6.12.101-ies2 --all >/dev/null 2>&1
     fi
     if [ "$DRIVER_CHANGED" -eq 1 ] && [ -d "$BACKUP_ROOT/files/usr/src/fm10k-uio-1.1.0" ]; then
         rsync -a --delete "$BACKUP_ROOT/files/usr/src/fm10k-uio-1.1.0/" /usr/src/fm10k-uio-1.1.0/
@@ -208,6 +210,12 @@ rollback() {
         dkms add fm10k-uio/6.12.101-ies1 >/dev/null 2>&1
         dkms build fm10k-uio/6.12.101-ies1 -k "$(uname -r)" >/dev/null 2>&1
         dkms install fm10k-uio/6.12.101-ies1 -k "$(uname -r)" >/dev/null 2>&1
+        depmod -a
+    elif [ "$DRIVER_CHANGED" -eq 1 ] && [ -d "$BACKUP_ROOT/files/usr/src/fm10k-uio-6.12.101-ies2" ]; then
+        rsync -a --delete "$BACKUP_ROOT/files/usr/src/fm10k-uio-6.12.101-ies2/" /usr/src/fm10k-uio-6.12.101-ies2/
+        dkms add fm10k-uio/6.12.101-ies2 >/dev/null 2>&1
+        dkms build fm10k-uio/6.12.101-ies2 -k "$(uname -r)" >/dev/null 2>&1
+        dkms install fm10k-uio/6.12.101-ies2 -k "$(uname -r)" >/dev/null 2>&1
         depmod -a
     fi
     modprobe uio
@@ -240,7 +248,11 @@ if [ "$MANAGER_CHANGED" -eq 1 ]; then
     find /opt/pe31625g24dira-switch-manager/static -type f -exec chmod 644 {} +
     install -m 600 "$KIT_ROOT/webui/sensors.tp" /etc/pe31625g24dira/webui/sensors.tp
     install -m 644 "$KIT_ROOT/webui/pe31625g24dira-switch-manager.service" /etc/systemd/system/pe31625g24dira-switch-manager.service
-    [ "$REMOVE_XCVR" -eq 0 ] || rm -f -- /etc/pe31625g24dira/webui/xcvr.tp
+fi
+
+if [ "$STALE_METADATA" -eq 1 ]; then
+    rm -f -- /var/lib/pe31625g24dira/runtime-manifest.json
+    rm -rf -- /var/lib/pe31625g24dira/original-board
 fi
 
 if [ "$BOOT_CHANGED" -eq 1 ]; then
@@ -267,17 +279,19 @@ if [ "$SWITCH_CHANGED" -eq 1 ]; then
 fi
 
 if [ "$DRIVER_CHANGED" -eq 1 ]; then
-    log "installing fm10k 6.12.101-ies1"
+    log "installing fm10k 6.12.101-ies2"
     rsync -r --delete --no-times --omit-dir-times --no-perms \
-        "$KIT_ROOT/driver/fm10k-uio-6.12.101-ies1/" /usr/src/fm10k-uio-6.12.101-ies1/
-    find /usr/src/fm10k-uio-6.12.101-ies1 -type d -exec chmod 755 {} +
-    find /usr/src/fm10k-uio-6.12.101-ies1 -type f -exec chmod 644 {} +
+        "$KIT_ROOT/driver/fm10k-uio-6.12.101-ies2/" /usr/src/fm10k-uio-6.12.101-ies2/
+    find /usr/src/fm10k-uio-6.12.101-ies2 -type d -exec chmod 755 {} +
+    find /usr/src/fm10k-uio-6.12.101-ies2 -type f -exec chmod 644 {} +
     dkms remove fm10k-uio/1.1.0 --all >/dev/null 2>&1 || true
     dkms remove fm10k-uio/6.12.101-ies1 --all >/dev/null 2>&1 || true
-    dkms add fm10k-uio/6.12.101-ies1
-    dkms build fm10k-uio/6.12.101-ies1 -k "$(uname -r)"
-    dkms install fm10k-uio/6.12.101-ies1 -k "$(uname -r)"
+    dkms remove fm10k-uio/6.12.101-ies2 --all >/dev/null 2>&1 || true
+    dkms add fm10k-uio/6.12.101-ies2
+    dkms build fm10k-uio/6.12.101-ies2 -k "$(uname -r)"
+    dkms install fm10k-uio/6.12.101-ies2 -k "$(uname -r)"
     rm -rf -- /usr/src/fm10k-uio-1.1.0
+    rm -rf -- /usr/src/fm10k-uio-6.12.101-ies1
     depmod -a
     update-initramfs -u -k "$(uname -r)"
     if ! modprobe -r fm10k; then
