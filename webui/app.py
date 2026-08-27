@@ -1966,6 +1966,7 @@ def system_information_payload():
         "hostname": os.uname()[1],
         "os": _os_release_name(),
         "kernel": os.uname()[2],
+        "cpu_model": cpu_model(),
         "bios": bios or "未知",
         "storage": {
             "total": usage.total,
@@ -4066,6 +4067,10 @@ def parse_lane_diagnostic(output, endpoint):
         if not status:
             continue
         pll_code, signal_code, dfe_code, coarse, fine, eee, eye = status.groups()
+        eye_height_text, eye_width_text = eye.split("/", 1)
+        eye_height = int(eye_height_text) if eye_height_text.isdigit() else None
+        eye_width = int(eye_width_text) if eye_width_text.isdigit() else None
+
         rows.append(
             {
                 "lane": lane_index,
@@ -4075,7 +4080,8 @@ def parse_lane_diagnostic(output, endpoint):
                 "coarse": {"W": "未开始", "R": "进行中", "C": "完成", "E": "错误"}[coarse],
                 "fine": {"W": "未开始", "R": "进行中", "C": "完成", "E": "错误"}[fine],
                 "eee": eee,
-                "eye_score": eye,
+                "eye_height": eye_height if eye_height is not None and 0 <= eye_height <= 64 else None,
+                "eye_width": eye_width if eye_width is not None and 0 <= eye_width <= 64 else None,
             }
         )
     if not rows:

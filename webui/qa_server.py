@@ -81,7 +81,7 @@ class Handler(BaseHTTPRequestHandler):
                 "service": "active",
                 "service_health": {"status": "healthy", "service": "active", "uio_ready": True, "testpoint_ready": True},
                 "system_information": {
-                    "hostname": "pe31625-preview", "os": "Debian GNU/Linux 13 (trixie)", "kernel": "6.12.0-preview", "bios": "preview",
+                    "hostname": "pe31625-preview", "os": "Debian GNU/Linux 13 (trixie)", "kernel": "6.12.0-preview", "cpu_model": "Intel(R) Atom(TM) CPU E3826 @ 1.46GHz", "bios": "preview",
                     "storage": {"total": 32000000000, "used": 4000000000, "free": 28000000000, "usage_percent": 12.5},
                     "components": {"manager": APP.APP_VERSION, "ies_sdk": "4.3.3_0471_00339702_silicom", "testpoint": "4.3", "fm10k_uio": {"version": "6.12.101-ies1", "loaded": True}},
                 },

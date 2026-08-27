@@ -20,6 +20,7 @@ FORCE_PLATFORM_PROFILE=0
 PLATFORM_PROFILE=auto
 TEMP_DIR=""
 PROFILE_TEMP_DIR=""
+FIXED_PLATFORM_DIR=""
 RUNTIME_DOWNLOAD_DIR=""
 NEEDS_REBOOT=0
 RUNTIME_MANIFEST_SOURCE=""
@@ -94,6 +95,7 @@ done
 cleanup() {
     [ -z "$TEMP_DIR" ] || rm -rf -- "$TEMP_DIR"
     [ -z "$PROFILE_TEMP_DIR" ] || rm -rf -- "$PROFILE_TEMP_DIR"
+    [ -z "$FIXED_PLATFORM_DIR" ] || rm -rf -- "$FIXED_PLATFORM_DIR"
     [ -z "$RUNTIME_DOWNLOAD_DIR" ] || rm -rf -- "$RUNTIME_DOWNLOAD_DIR"
 }
 trap cleanup EXIT
@@ -311,6 +313,12 @@ if [ "$AUDIT" -eq 1 ]; then
 fi
 
 [ "$os_id" = debian ] && [ "$os_version" = 13 ] || die "write mode requires Debian 13"
+
+log "generating initial fixed 24-slot logical-port model"
+FIXED_PLATFORM_DIR=$(mktemp -d "${TMPDIR:-/var/tmp}/pe31625g24dira-platform.XXXXXX")
+active_platform="$FIXED_PLATFORM_DIR/fm_platform_attributes.cfg"
+python3 "$SCRIPT_DIR/generate-fixed-platform.py" \
+    "$KIT_ROOT/webui" "$source_platform" "$active_platform"
 [ "$(uname -m)" = x86_64 ] || die "write mode requires x86_64"
 
 BACKUP_ROOT="/var/backups/pe31625g24dira/deploy-$(date -u +%Y%m%dT%H%M%SZ)"
@@ -413,8 +421,8 @@ ln -s /opt/silicom-legacy/usr/local/rrc /usr/local/rrc
 
 log "installing platform configuration and service scripts"
 install -d -m 755 /usr/share/netfab /etc/pe31625g24dira /usr/local/sbin
-install -m 644 "$source_platform" /usr/share/netfab/fm_platform_attributes.cfg
-install -m 644 "$source_platform" /usr/share/netfab/fm_platform_attributes_pe31625g24dira.cfg
+install -m 644 "$active_platform" /usr/share/netfab/fm_platform_attributes.cfg
+install -m 644 "$active_platform" /usr/share/netfab/fm_platform_attributes_pe31625g24dira.cfg
 install -m 755 "$KIT_ROOT/switch_service/pe31625g24dira-board-init.sh" /usr/local/sbin/pe31625g24dira-board-init
 install -m 755 "$KIT_ROOT/switch_service/pe31625g24dira-queue-fan-init.sh" /usr/local/sbin/pe31625g24dira-queue-fan-init
 install -m 755 "$KIT_ROOT/switch_service/pe31625g24dira-testpoint-wrapper.sh" /usr/local/sbin/pe31625g24dira-testpoint-wrapper

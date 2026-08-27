@@ -218,6 +218,7 @@ function renderTelemetry(data) {
   $('#system-device-version').textContent = [identity.vpd_version, identity.hardware_family].filter(Boolean).join(' · ') || '未知';
   $('#system-device-platform').textContent = [identity.platform, identity.hw_version === null || identity.hw_version === undefined ? null : `hw_version ${identity.hw_version}`].filter(Boolean).join(' · ') || '未知';
   $('#system-device-serial').textContent = identity.serial || '未知';
+  $('#system-device-cpu').textContent = data.cpu.model || '未知';
   $('#hostname').textContent = data.hostname;
   $('#cpu-usage').textContent = data.cpu.usage_percent === null ? '采样中' : `${data.cpu.usage_percent}%`;
   $('#cpu-note').textContent = `${data.cpu.cores} 核`;
@@ -878,7 +879,7 @@ function renderFdb(result) {
 function renderLaneDiagnostic(result) {
   const root = $('#lane-diagnostic-result'); root.className = 'diagnostic-content'; root.replaceChildren();
   const meta = document.createElement('p'); meta.className = 'diagnostic-meta'; meta.textContent = `端口 ${result.endpoint.logical} · ${result.port.speed} · ${result.port.state}`; root.append(meta);
-  const grid = document.createElement('div'); grid.className = 'lane-diagnostic-grid'; result.lanes.forEach((lane) => { const card = document.createElement('article'); const title = document.createElement('strong'); title.textContent = `Lane ${lane.lane}`; const dl = document.createElement('dl'); [['信号', lane.signal], ['PLL', lane.pll], ['DFE', `${lane.dfe_mode} · ${lane.coarse}/${lane.fine}`], ['眼图评分', lane.eye_score]].forEach(([name, value]) => { const dt = document.createElement('dt'); dt.textContent = name; const dd = document.createElement('dd'); dd.textContent = value; dl.append(dt, dd); }); card.append(title, dl); grid.append(card); }); root.append(grid);
+  const grid = document.createElement('div'); grid.className = 'lane-diagnostic-grid'; result.lanes.forEach((lane) => { const card = document.createElement('article'); const title = document.createElement('strong'); title.textContent = `Lane ${lane.lane}`; const dl = document.createElement('dl'); const values = [['信号', lane.signal], ['PLL', lane.pll], ['DFE', `${lane.dfe_mode} · ${lane.coarse}/${lane.fine}`], ['眼高', lane.eye_height === null ? '不可用' : `${lane.eye_height} / 64`]]; if (lane.eye_width !== null) values.push(['眼宽', `${lane.eye_width} / 64`]); values.forEach(([name, value]) => { const dt = document.createElement('dt'); dt.textContent = name; const dd = document.createElement('dd'); dd.textContent = value; dl.append(dt, dd); }); card.append(title, dl); grid.append(card); }); root.append(grid);
 }
 
 function renderOpticsIdentity(section, identity) {
@@ -1322,7 +1323,8 @@ function renderSystemInformation(info) {
   $('#system-info-hostname').textContent = info.hostname || '未知';
   $('#system-info-os').textContent = info.os || '未知';
   $('#system-info-kernel').textContent = info.kernel || '未知';
-  $('#system-info-bios').textContent = info.bios || '未知';
+  $('#system-device-cpu').textContent = info.cpu_model || '未知';
+  $('#system-device-bios').textContent = info.bios || '未知';
   $('#system-info-storage').textContent = storage;
   $('#storage').textContent = storage;
   $('#component-manager').textContent = components.manager || '未知';

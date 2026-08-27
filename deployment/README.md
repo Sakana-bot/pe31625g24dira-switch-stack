@@ -2,7 +2,7 @@
 
 > **风险提示：**本项目全部代码由 ChatGPT 生成，不保证正确性、可靠性、安全性或可用性。请先审计并准备本地恢复路径。
 
-当前版本：`1.1.0`。管理软件与 deploy-kit 共用一个版本号；legacy SDK runtime 独立提供，日常升级不会重复安装。
+当前版本：`1.2.0`。管理软件与 deploy-kit 共用一个版本号；legacy SDK runtime 独立提供，日常升级不会重复安装。
 
 ## 文件说明
 
@@ -50,7 +50,7 @@ sudo env PE31625G24DIRA_RUNTIME_TOKEN='<只读 token>' \
   --runtime-sha256 '<64 位 SHA-256>' --audit
 ```
 
-安装器会验证包内哈希、硬件 PCI ID、bundle 格式和 SDK/platform 内容，然后安装 DKMS 驱动、交换服务及 WebUI。默认管理口布局为：
+安装器会验证包内哈希、硬件 PCI ID、bundle 格式和 SDK/platform 内容，然后从原厂母版生成固定 24 槽位逻辑端口模型，再安装 DKMS 驱动、交换服务及 WebUI。聚合态使用逻辑端口 `1/5/9/13/17/21`，其余槽位预留并禁用；后续拆分与聚合无需为逻辑端口重新编号。默认管理口布局为：
 
 - `enp2s0`：DHCP
 - `enp3s0`：`192.168.255.2/24`

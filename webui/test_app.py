@@ -409,6 +409,8 @@ Port           : 4                  4                  4
         lane = "1 10G SR UP UP L | Y | 1 | CC | -- 24/NA"
         result = APP.parse_lane_diagnostic(lane, {"logical": 1, "lane": 0})
         self.assertEqual(result["lanes"][0]["signal"], "有信号")
+        self.assertEqual(result["lanes"][0]["eye_height"], 24)
+        self.assertIsNone(result["lanes"][0]["eye_width"])
         records = "\n".join(
             "PE31625G24DIRA_OPTICS mpo={} mux={} select_status=0 page_status=0 "
             "read_status=0 restore_page_status=0 raw={}".format(mpo, mpo, "00" * 24)
