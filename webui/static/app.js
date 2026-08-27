@@ -1163,7 +1163,7 @@ async function selectLatestUpgrade() {
   output.className = 'operation-output upgrade-pending';
   output.textContent = ui.upgradeIncludePrerelease ? '正在获取最新版本（包含预发布）…' : '正在获取最新正式版本…';
   try {
-    const value = await api('/api/system/upgrade/latest', { method: 'POST', body: JSON.stringify({ include_prerelease: ui.upgradeIncludePrerelease }) });
+    const value = await api('/api/system/upgrade/latest', { method: 'POST', body: JSON.stringify({ include_prerelease: ui.upgradeIncludePrerelease, allow_downgrade: ui.upgradeAllowDowngrade }) });
     await inspectUpgrade(value);
   } catch (error) {
     output.textContent = error.message;
@@ -1436,7 +1436,7 @@ $('#config-import').addEventListener('click', importConfiguration);
 $('#upgrade-file').addEventListener('change', selectUpgradeFile);
 $('#upgrade-latest').addEventListener('click', selectLatestUpgrade);
 $('#upgrade-prerelease').addEventListener('click', (event) => { ui.upgradeIncludePrerelease = event.currentTarget.getAttribute('aria-checked') !== 'true'; setSwitch(event.currentTarget, ui.upgradeIncludePrerelease); });
-$('#upgrade-downgrade').addEventListener('click', async (event) => { ui.upgradeAllowDowngrade = event.currentTarget.getAttribute('aria-checked') !== 'true'; setSwitch(event.currentTarget, ui.upgradeAllowDowngrade); if (ui.upgradeCandidate) { try { await inspectUpgrade(ui.upgradeCandidate); } catch (error) { showToast(error.message); } } });
+$('#upgrade-downgrade').addEventListener('click', async (event) => { ui.upgradeAllowDowngrade = event.currentTarget.getAttribute('aria-checked') !== 'true'; setSwitch(event.currentTarget, ui.upgradeAllowDowngrade); if (ui.upgradeCandidate) { try { if (ui.upgradeCandidate.staged === false && ui.upgradeAllowDowngrade) await selectLatestUpgrade(); else await inspectUpgrade(ui.upgradeCandidate); } catch (error) { showToast(error.message); } } });
 $('#upgrade-apply').addEventListener('click', () => { if (ui.upgradeReady) { const downgrade = ui.upgradeCandidate?.version_relation === 'downgrade'; $('#upgrade-description').textContent = downgrade ? `将从 ${ui.upgradeCandidate.current_version} 降级到 ${ui.upgradeCandidate.version}。管理页面和交换端口可能中断，请勿断电。` : '更新期间管理页面会暂时断开；如果包含交换服务或驱动变更，交换端口也会短暂中断。请勿断电或重复操作。'; $('#upgrade-submit').textContent = downgrade ? '确认降级' : '确认更新'; $('#upgrade-submit').disabled = false; $('#upgrade-modal').hidden = false; } });
 $('#upgrade-cancel').addEventListener('click', () => { $('#upgrade-modal').hidden = true; });
 $('#upgrade-submit').addEventListener('click', applyUpgrade);

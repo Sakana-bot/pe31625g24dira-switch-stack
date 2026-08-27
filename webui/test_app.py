@@ -88,6 +88,20 @@ class SystemManagementTests(unittest.TestCase):
         self.assertEqual(value["release"], "v1.0.0")
         self.assertEqual(value["filename"], name)
 
+    def test_older_online_release_is_classified_before_download(self):
+        name = "pe31625g24dira-deploy-kit-1.2.0.tar.gz"
+        release = json.dumps({
+            "tag_name": "v1.2.0",
+            "assets": [{"name": name, "browser_download_url": "https://github.com/package"}],
+        }).encode()
+        with mock.patch.object(APP, "download_release_url", return_value=release) as download, mock.patch.object(
+            APP, "installed_package_version", return_value="1.3.0-dev"
+        ):
+            value = APP.stage_latest_upgrade()
+        self.assertEqual(value["version_relation"], "downgrade")
+        self.assertFalse(value["staged"])
+        self.assertEqual(download.call_count, 1)
+
 
 class TopologyTests(unittest.TestCase):
     def render(self, factory):

@@ -3214,7 +3214,7 @@ def release_package(release):
     return (key, packages[0]) if key is not None else None
 
 
-def stage_latest_upgrade(include_prerelease=False):
+def stage_latest_upgrade(include_prerelease=False, allow_downgrade=False):
     try:
         value = json.loads(download_release_url(
             RELEASES_API if include_prerelease else RELEASE_API, 2 * 1024 * 1024
@@ -3248,6 +3248,23 @@ def stage_latest_upgrade(include_prerelease=False):
         raise ApiError(502, "Release 中必须且只能包含一个通用部署包")
     package = packages[0]
     package_name = package["name"]
+    version_match = re.fullmatch(
+        r"pe31625g24dira-deploy-kit-([A-Za-z0-9._+-]+)\.tar\.gz", package_name
+    )
+    candidate_version = version_match.group(1) if version_match else ""
+    state = upgrade_version_state(candidate_version)
+    if state["version_relation"] == "current" or (
+        state["version_relation"] == "downgrade" and not allow_downgrade
+    ):
+        return {
+            "version": candidate_version,
+            "filename": package_name,
+            "sha256": "",
+            "size": 0,
+            "release": str(release.get("tag_name", "")),
+            "staged": False,
+            **state,
+        }
     sidecars = [
         asset
         for asset in assets
@@ -3271,7 +3288,7 @@ def stage_latest_upgrade(include_prerelease=False):
     if not hmac.compare_digest(digest, match.group(1).lower()):
         raise ApiError(502, "Release 部署包 SHA-256 校验失败")
     metadata = stage_upgrade_archive(archive, package_name)
-    return {**metadata, "release": str(release.get("tag_name", ""))}
+    return {**metadata, "release": str(release.get("tag_name", "")), "staged": True}
 
 
 def pending_upgrade():
@@ -5047,7 +5064,9 @@ class Handler(BaseHTTPRequestHandler):
                 body = self.body_json()
                 if self.app_state.operation_lock.locked():
                     raise ApiError(409, "硬件配置或 SDK 读取正在进行")
-                return self.json_response(201, stage_latest_upgrade(bool(body.get("include_prerelease"))))
+                return self.json_response(201, stage_latest_upgrade(
+                    bool(body.get("include_prerelease")), bool(body.get("allow_downgrade"))
+                ))
             if path == "/api/system/upgrade/audit":
                 body = self.body_json()
                 return self.json_response(200, audit_pending_upgrade(bool(body.get("allow_downgrade"))))
