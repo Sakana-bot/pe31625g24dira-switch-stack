@@ -410,7 +410,7 @@ main{padding:14px}.page-heading{margin-bottom:12px}.page-heading h1{font-size:va
 .sensor-category-head{align-items:flex-start;flex-direction:column;gap:3px}.sensor-category-head span{text-align:left}
 .management-grid{grid-template-columns:1fr}
 .temperature-summary{grid-template-columns:1fr 1fr}
-.active-port-row{grid-template-columns:1fr}.active-port-metrics{justify-content:space-between}.active-port-traffic{min-width:0;overflow:hidden;text-overflow:ellipsis}
+.active-port-row{grid-template-columns:minmax(0,1fr) auto;align-items:start;row-gap:8px}.active-port-metrics{display:contents}.active-port-traffic{grid-column:1/-1;grid-row:2;min-width:0;overflow:hidden;text-overflow:ellipsis}.active-port-speed{grid-column:2;grid-row:1;align-self:center}
 .stats-summary{grid-template-columns:1fr 1fr}.stat-list,.stat-list.compact{grid-template-columns:1fr}.stat-list:not(.compact) .stat-item{border-right:0}.stat-list:not(.compact) .stat-item:nth-last-child(-n+2){border-bottom:1px solid var(--line)}.stat-list:not(.compact) .stat-item:last-child{border-bottom:0}.length-columns{grid-template-columns:1fr}.stats-toolbar{align-items:stretch;flex-direction:column}.stats-toolbar .custom-select{min-width:0;width:100%}
 .summary-strip{grid-template-columns:1fr 1fr}
 .summary-strip>div{border-bottom:1px solid var(--line)}
@@ -424,7 +424,7 @@ main{padding:14px}.page-heading{margin-bottom:12px}.page-heading h1{font-size:va
 .network-grid{grid-template-columns:1fr}.port-label-list{grid-template-columns:1fr}
 .fan-trigger-grid{grid-template-columns:1fr}.fan-preview{grid-template-columns:1fr;gap:6px}.fan-preview i{width:100%}.fan-curve-actions .button{width:100%}
 .vlan-list-head{display:none}.vlan-item{grid-template-columns:55px 1fr 1fr}.vlan-add-form{grid-template-columns:1fr}.vlan-add-form .confirm-actions{grid-column:auto}.vlan-tagged-list{grid-template-columns:1fr}.lane-diagnostic-grid,.optics-identity,.optics-channel-grid{grid-template-columns:1fr 1fr}.preview-row{align-items:flex-start;flex-direction:column;gap:5px}.preview-row span{text-align:left}
-.modal-card{width:calc(100vw - 28px);max-height:calc(100dvh - 28px);overflow:auto}.panel-head{padding-left:14px;padding-right:14px}
+.modal-card{width:calc(100vw - 28px);max-height:calc(100dvh - 28px);overflow:auto}.panel-head{padding-left:14px;padding-right:14px}.topology-preview>.panel-head{position:relative;display:block}.topology-preview>.panel-head h2{padding-right:96px}.topology-preview>.panel-head .soft-pill{position:absolute;top:14px;right:14px;white-space:nowrap}
 }
 @media(max-width:480px){.lane-list{grid-template-columns:minmax(52px,1fr) minmax(0,96px) 80px 34px;column-gap:6px}
 #page-ports .lane-row .custom-select{width:80px}
