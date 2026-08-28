@@ -10,7 +10,22 @@
 #include <linux/rtnetlink.h>
 #include <linux/if_vlan.h>
 #include <linux/pci.h>
+#include <linux/timer.h>
 #include <linux/uio_driver.h>
+
+/* Timer helpers were renamed without changing the underlying semantics.
+ * Detect the API that the target kernel headers expose instead of keying the
+ * out-of-tree module to a distribution or a hard-coded kernel release.
+ */
+#ifdef timer_container_of
+#define fm10k_timer_container_of(var, callback_timer, timer_fieldname) \
+	timer_container_of(var, callback_timer, timer_fieldname)
+#define fm10k_timer_delete_sync(timer) timer_delete_sync(timer)
+#else
+#define fm10k_timer_container_of(var, callback_timer, timer_fieldname) \
+	from_timer(var, callback_timer, timer_fieldname)
+#define fm10k_timer_delete_sync(timer) del_timer_sync(timer)
+#endif
 
 #include "fm10k_pf.h"
 #include "fm10k_vf.h"

@@ -2,7 +2,7 @@
 
 Switch Manager 是 PE31625G24DIRA Switch Stack 的管理界面，与仓库根目录 `VERSION` 共用版本号。后端使用 Python 3.9+ 标准库 HTTP 服务，前端使用原生 HTML、CSS 和 JavaScript，不依赖 Web 框架。
 
-当前整机部署仅在 Debian 13 x86_64 上验证。面向设备用户的安装与升级方法见仓库根目录 `README.md` 和 `deployment/README.md`；本文只记录 WebUI 的当前开发结构。
+当前整机部署已在 Debian 13 和 Ubuntu 26.04 x86_64 上验证。面向设备用户的安装与升级方法见仓库根目录 `README.md` 和 `deployment/README.md`；本文只记录 WebUI 的当前开发结构。
 
 ## 页面与数据来源
 
@@ -64,6 +64,8 @@ python .\webui\qa_server.py
 - `style.css`：布局、组件和主题样式
 
 界面字号、字重、颜色与图标规则见根目录 `UI_STYLE_GUIDE.md`。新增样式应复用现有 token，避免为单个页面堆叠特例。
+
+桌面端使用常驻侧栏；宽度不超过 700px 时改用顶栏按钮控制的侧栏抽屉。移动端仍保留相同的一级/二级功能结构，表格只在自身区域滚动。
 
 ## 基础检查
 

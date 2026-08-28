@@ -4,7 +4,8 @@ import { createApiClient, waitForJob } from '/api-client.js';
 import { closeCustomSelects, destroySelects, enhanceNumberInputs, enhanceSelects, syncSelect } from '/controls.js';
 
 const TRAFFIC_UNIT_STORAGE_KEY = 'pe31625g24dira-traffic-unit';
-const ui = { state: null, csrf: null, topology: {}, vlans: [], l2: null, l2Saved: null, pendingPortAdmin: null, vlanTaggedPort: null, vlanPreview: null, fan: null, importedConfig: null, upgradeReady: false, upgradeCandidate: null, live: {}, telemetry: null, pendingTelemetry: null, busy: false, poweringOff: false, rebooting: false, telemetryTimer: null, healthTimer: null, logTimer: null, toastTimer: null, topologyPreview: null, logSource: 'system', logsLoaded: false, logAutoFollow: true, logRequestId: 0, trafficUnit: window.localStorage.getItem(TRAFFIC_UNIT_STORAGE_KEY) === 'bytes' ? 'bytes' : 'bits' };
+const PRERELEASE_STORAGE_KEY = 'pe31625g24dira-include-prerelease';
+const ui = { state: null, csrf: null, topology: {}, vlans: [], l2: null, l2Saved: null, pendingPortAdmin: null, vlanTaggedPort: null, vlanPreview: null, fan: null, importedConfig: null, upgradeReady: false, upgradeCandidate: null, upgradeIncludePrerelease: window.localStorage.getItem(PRERELEASE_STORAGE_KEY) === 'true', upgradeAllowDowngrade: false, live: {}, telemetry: null, pendingTelemetry: null, busy: false, poweringOff: false, rebooting: false, telemetryTimer: null, healthTimer: null, logTimer: null, toastTimer: null, topologyPreview: null, logSource: 'system', logsLoaded: false, logAutoFollow: true, logRequestId: 0, trafficUnit: window.localStorage.getItem(TRAFFIC_UNIT_STORAGE_KEY) === 'bytes' ? 'bytes' : 'bits' };
 const $ = (selector) => document.querySelector(selector);
 const speedLabel = (speed) => `${speed / 1000}G`;
 const clone = (value) => JSON.parse(JSON.stringify(value));
@@ -1125,17 +1126,31 @@ function renderUpgradePackage(value) {
 async function inspectUpgrade(value) {
   renderUpgradePackage(value);
   const output = $('#upgrade-result'); output.hidden = false; output.className = 'operation-output';
-  if (!value.update_available) {
+  $('#upgrade-apply').textContent = '执行更新';
+  if (value.version_relation === 'current') {
     output.textContent = '已是最新版本，无需更新。';
     output.classList.add('upgrade-current');
     ui.upgradeReady = false; $('#upgrade-apply').disabled = true;
     return;
   }
+  if (value.version_relation === 'downgrade' && !ui.upgradeAllowDowngrade) {
+    output.textContent = `检测到较旧版本 ${value.version}。`;
+    output.classList.add('upgrade-available');
+    ui.upgradeReady = true; $('#upgrade-apply').disabled = false;
+    $('#upgrade-apply').textContent = `降级到 ${value.version}`;
+    return;
+  }
+  if (value.version_relation === 'unknown') {
+    output.textContent = '无法比较更新包版本。';
+    ui.upgradeReady = false; $('#upgrade-apply').disabled = true;
+    return;
+  }
   output.textContent = '正在检查更新内容…';
-  const audit = await api('/api/system/upgrade/audit', { method: 'POST', body: '{}' });
+  output.classList.add('upgrade-pending');
+  const audit = await api('/api/system/upgrade/audit', { method: 'POST', body: JSON.stringify({ allow_downgrade: ui.upgradeAllowDowngrade }) });
   renderUpgradePackage(audit);
-  output.textContent = `发现新版本 ${audit.version}，可以执行更新。`;
-  output.classList.add('upgrade-available');
+  output.className = 'operation-output upgrade-available';
+  output.textContent = audit.version_relation === 'downgrade' ? `可以降级到 ${audit.version}。` : `发现新版本 ${audit.version}，可以执行更新。`;
   ui.upgradeReady = true; $('#upgrade-apply').disabled = false;
 }
 
@@ -1149,9 +1164,9 @@ async function selectLatestUpgrade() {
   const output = $('#upgrade-result');
   output.hidden = false;
   output.className = 'operation-output upgrade-pending';
-  output.textContent = '正在获取最新正式版本…';
+  output.textContent = ui.upgradeIncludePrerelease ? '正在获取最新版本（包含预发布）…' : '正在获取最新正式版本…';
   try {
-    const value = await api('/api/system/upgrade/latest', { method: 'POST', body: '{}' });
+    const value = await api('/api/system/upgrade/latest', { method: 'POST', body: JSON.stringify({ include_prerelease: ui.upgradeIncludePrerelease, allow_downgrade: ui.upgradeAllowDowngrade }) });
     await inspectUpgrade(value);
   } catch (error) {
     output.textContent = error.message;
@@ -1163,8 +1178,21 @@ async function selectLatestUpgrade() {
 
 async function applyUpgrade() {
   const button = $('#upgrade-submit'); button.disabled = true;
+  const downgrade = ui.upgradeCandidate?.version_relation === 'downgrade';
   try {
-    const value = await api('/api/system/upgrade/apply', { method: 'POST', body: JSON.stringify({ confirm: true }) });
+    if (downgrade) {
+      ui.upgradeAllowDowngrade = true;
+      $('#upgrade-modal').hidden = true;
+      const output = $('#upgrade-result'); output.hidden = false; output.className = 'operation-output upgrade-pending'; output.textContent = '正在检查降级包…';
+      if (ui.upgradeCandidate.staged === false) {
+        const value = await api('/api/system/upgrade/latest', { method: 'POST', body: JSON.stringify({ include_prerelease: ui.upgradeIncludePrerelease, allow_downgrade: true }) });
+        await inspectUpgrade(value);
+      } else {
+        await inspectUpgrade(ui.upgradeCandidate);
+      }
+      if (!ui.upgradeReady) throw new Error('降级包未通过检查');
+    }
+    const value = await api('/api/system/upgrade/apply', { method: 'POST', body: JSON.stringify({ confirm: true, allow_downgrade: ui.upgradeAllowDowngrade }) });
     $('#upgrade-modal').hidden = true;
     $('#upgrade-result').hidden = false;
     $('#upgrade-result').className = 'operation-output';
@@ -1172,6 +1200,8 @@ async function applyUpgrade() {
     $('#upgrade-apply').disabled = true;
     await monitorUpgrade(value.unit);
   } catch (error) {
+    ui.upgradeAllowDowngrade = false;
+    if (downgrade && ui.upgradeCandidate) { ui.upgradeReady = true; $('#upgrade-apply').disabled = false; $('#upgrade-apply').textContent = `降级到 ${ui.upgradeCandidate.version}`; }
     showToast(error.message); button.disabled = false;
   }
 }
@@ -1348,7 +1378,22 @@ async function loadState(resetDraft = true) {
   renderPorts(); renderStatsPortSelect(); renderVlans(); renderL2(); renderFanCurve();
 }
 
-document.querySelectorAll('.nav-item').forEach((button) => button.addEventListener('click', () => setPage(button.dataset.page)));
+function setMobileNavigation(open) {
+  const sidebar = $('#sidebar');
+  const toggle = $('#mobile-nav-toggle');
+  const backdrop = $('#mobile-nav-backdrop');
+  if (!sidebar || !toggle || !backdrop) return;
+  sidebar.classList.toggle('mobile-open', open);
+  backdrop.classList.toggle('visible', open);
+  toggle.setAttribute('aria-expanded', String(open));
+  toggle.setAttribute('aria-label', open ? '关闭导航' : '打开导航');
+  document.body.classList.toggle('mobile-nav-open', open);
+}
+
+document.querySelectorAll('.nav-item').forEach((button) => button.addEventListener('click', () => {
+  setPage(button.dataset.page);
+  setMobileNavigation(false);
+}));
 document.querySelectorAll('.nav-group-toggle').forEach((button) => button.addEventListener('click', () => {
   const group = button.closest('.nav-group');
   group.classList.toggle('open');
@@ -1386,7 +1431,10 @@ $('#add-vlan-modal').addEventListener('click', (event) => { if (event.target ===
 $('#factory-reset').addEventListener('click', () => { if (!ui.busy) { $('#factory-reset-submit').disabled = false; $('#factory-reset-modal').hidden = false; } });
 $('#factory-reset-cancel').addEventListener('click', closeFactoryResetModal); $('#factory-reset-submit').addEventListener('click', factoryReset);
 $('#factory-reset-modal').addEventListener('click', (event) => { if (event.target === event.currentTarget) closeFactoryResetModal(); });
-document.addEventListener('keydown', (event) => { if (event.key === 'Escape') { closePowerMenu(); closePoweroffModal(); closeRebootModal(); closeFactoryResetModal(); closeAddVlanModal(); closeTaggedVlanModal(); closePortAdminModal(); $('#upgrade-modal').hidden = true; } });
+document.addEventListener('keydown', (event) => { if (event.key === 'Escape') { setMobileNavigation(false); closePowerMenu(); closePoweroffModal(); closeRebootModal(); closeFactoryResetModal(); closeAddVlanModal(); closeTaggedVlanModal(); closePortAdminModal(); $('#upgrade-modal').hidden = true; } });
+$('#mobile-nav-toggle').addEventListener('click', () => setMobileNavigation(!$('#sidebar').classList.contains('mobile-open')));
+$('#mobile-nav-backdrop').addEventListener('click', () => setMobileNavigation(false));
+window.addEventListener('resize', () => { if (window.innerWidth > 700) setMobileNavigation(false); });
 $('#stats-port').addEventListener('change', renderPortStatistics);
 $('#mpo1-admin').addEventListener('click', () => toggleMpo(1)); $('#mpo2-admin').addEventListener('click', () => toggleMpo(2));
 $('#add-vlan-form').addEventListener('submit', (event) => { event.preventDefault(); const form = event.currentTarget; if (!form.checkValidity()) return showToast('VLAN ID 必须为 2–4094，名称不能为空'); const id = Number($('#new-vlan-id').value); const name = $('#new-vlan-name').value.trim(); if (ui.vlans.some((vlan) => vlan.id === id)) return showToast(`VLAN ${id} 已存在`); ui.vlans.push({ id, name, mtu: 1536, tagged: [], untagged: [] }); closeAddVlanModal(); renderVlans(); });
@@ -1405,7 +1453,8 @@ $('#config-import-file').addEventListener('change', selectConfigurationFile);
 $('#config-import').addEventListener('click', importConfiguration);
 $('#upgrade-file').addEventListener('change', selectUpgradeFile);
 $('#upgrade-latest').addEventListener('click', selectLatestUpgrade);
-$('#upgrade-apply').addEventListener('click', () => { if (ui.upgradeReady) { $('#upgrade-submit').disabled = false; $('#upgrade-modal').hidden = false; } });
+$('#upgrade-prerelease').addEventListener('click', (event) => { ui.upgradeIncludePrerelease = event.currentTarget.getAttribute('aria-checked') !== 'true'; setSwitch(event.currentTarget, ui.upgradeIncludePrerelease); window.localStorage.setItem(PRERELEASE_STORAGE_KEY, String(ui.upgradeIncludePrerelease)); });
+$('#upgrade-apply').addEventListener('click', () => { if (ui.upgradeReady) { const downgrade = ui.upgradeCandidate?.version_relation === 'downgrade'; $('#upgrade-description').textContent = downgrade ? `将从 ${ui.upgradeCandidate.current_version} 降级到 ${ui.upgradeCandidate.version}。管理页面和交换端口可能中断，请勿断电。` : '更新期间管理页面会暂时断开；如果包含交换服务或驱动变更，交换端口也会短暂中断。请勿断电或重复操作。'; $('#upgrade-submit').textContent = downgrade ? '确认降级' : '确认更新'; $('#upgrade-submit').disabled = false; $('#upgrade-modal').hidden = false; } });
 $('#upgrade-cancel').addEventListener('click', () => { $('#upgrade-modal').hidden = true; });
 $('#upgrade-submit').addEventListener('click', applyUpgrade);
 $('#upgrade-modal').addEventListener('click', (event) => { if (event.target === event.currentTarget) event.currentTarget.hidden = true; });
@@ -1414,6 +1463,7 @@ enhanceSelects(document);
 enhanceNumberInputs(document);
 
 (async () => {
+  setSwitch($('#upgrade-prerelease'), ui.upgradeIncludePrerelease);
   const initialPage = pageFromLocation();
   setPage(initialPage, false);
   if (window.location.pathname !== PAGE_PATHS[initialPage]) window.history.replaceState({ page: initialPage }, '', PAGE_PATHS[initialPage]);

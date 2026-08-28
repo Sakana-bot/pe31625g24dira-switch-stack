@@ -7,8 +7,8 @@ Silicom PE31625G24DIRA Switch-on-NIC 的社区管理软件，可将板载 Intel 
 
 ## 准备系统
 
-- 用户需先自行安装干净的 x86_64 Linux 系统，并确保管理口联网且可使用 root 或 sudo。
-- 当前已验证并允许写入部署：Debian 13。
+- 用户需先自行安装干净的 x86_64 Debian 或 Ubuntu 系统，并确保管理口联网且可使用 root 或 sudo。
+- 已完成整机实机验证：Debian 13、Ubuntu 26.04（Linux 7.0）。其他 Debian/Ubuntu 版本会先在本机编译驱动；编译失败时安装器会在改动交换服务前停止。
 - Python：3.9 或更高版本
 - 已内置 profile：`sil001-hw4-b0`（PCI subsystem `1374:01d0`，VPD 为 PE31625G24DIRA-MPS B0）
 
@@ -35,8 +35,8 @@ sha256sum -c pe31625g24dira-deploy-kit-*.tar.gz.sha256
 sha256sum -c pe31625g24dira-legacy-sdk-runtime-*.tar.gz.sha256
 tar -xzf pe31625g24dira-deploy-kit-*.tar.gz
 cd pe31625g24dira-deploy-kit-*
-sudo bash deployment/deploy-debian13.sh --runtime ../pe31625g24dira-legacy-sdk-runtime-*.tar.gz --audit
-sudo bash deployment/deploy-debian13.sh --runtime ../pe31625g24dira-legacy-sdk-runtime-*.tar.gz
+sudo bash deployment/deploy.sh --runtime ../pe31625g24dira-legacy-sdk-runtime-*.tar.gz --audit
+sudo bash deployment/deploy.sh --runtime ../pe31625g24dira-legacy-sdk-runtime-*.tar.gz
 sudo reboot
 ```
 
@@ -53,19 +53,22 @@ curl -fsSL https://raw.githubusercontent.com/Sakana-bot/pe31625g24dira-switch-st
 也可在 WebUI 的“备份与升级”页面上传新版部署包，或在终端执行：
 
 ```bash
-sudo bash deployment/upgrade-debian13.sh --audit
-sudo bash deployment/upgrade-debian13.sh --apply
+sudo bash deployment/upgrade.sh --audit
+sudo bash deployment/upgrade.sh --apply
 ```
 
 普通升级只更新驱动、交换控制代码和 WebUI，并保留已安装的 runtime 与用户配置。
 WebUI 的“备份与升级”页面也可直接检查 GitHub 上的最新正式版本，完成校验与差异审计后再由用户确认更新。
+需要参加 RC 测试时，可在检查前启用“包含预发布版本”；降级默认禁止，只有显式启用“允许降级”后才可执行。
+
+如果旧版本 WebUI 提示“部署包不完整”，请解压该版本部署包并执行包内实际提供的升级脚本；早期 Debian 13 部署包使用 `deployment/upgrade-debian13.sh --apply`，当前部署包使用 `deployment/upgrade.sh --apply`。
 
 ## 其他硬件版本
 
 未识别的 platform 不会套用内置配置。拥有对应文件时可使用：
 
 ```bash
-sudo bash deployment/deploy-debian13.sh \
+sudo bash deployment/deploy.sh \
   --platform-profile bundle --bundle ./board-bundle.tar.gz \
   --runtime ./legacy-sdk-runtime.tar.gz --audit
 ```

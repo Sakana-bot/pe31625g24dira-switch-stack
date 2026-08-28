@@ -93,6 +93,7 @@ CONFIG_EXPORT_VERSION = 3
 UPGRADE_ROOT = "/var/lib/pe31625g24dira/updates"
 UPGRADE_MAX_BYTES = 64 * 1024 * 1024
 RELEASE_API = "https://api.github.com/repos/Sakana-bot/pe31625g24dira-switch-stack/releases/latest"
+RELEASES_API = "https://api.github.com/repos/Sakana-bot/pe31625g24dira-switch-stack/releases?per_page=30"
 XCVR_WRITE_MAX_ATTEMPTS = 12
 FAN_MAX_RPM = 2800
 FAN_RESPONSE_TIMES = (5.45, 10.9, 21.6, 43.7)
@@ -1938,17 +1939,24 @@ def _driver_version():
         output = ""
     match = re.search(r"(?:^|\n)fm10k-uio/([^,\s]+)", output)
     dkms_version = match.group(1) if match else "未知"
-    try:
-        module_version = subprocess.run(
-            ["modinfo", "-F", "version", "fm10k"],
-            capture_output=True,
-            text=True,
-            timeout=3,
-            check=False,
-        ).stdout.strip()
-    except (OSError, subprocess.TimeoutExpired):
-        module_version = ""
     loaded = Path("/sys/module/fm10k").exists() and Path("/dev/uio0").exists()
+    module_version = ""
+    if loaded:
+        try:
+            module_version = read_text("/sys/module/fm10k/version").strip()
+        except OSError:
+            pass
+    if not module_version:
+        try:
+            module_version = subprocess.run(
+                ["modinfo", "-F", "version", "fm10k"],
+                capture_output=True,
+                text=True,
+                timeout=3,
+                check=False,
+            ).stdout.strip()
+        except (OSError, subprocess.TimeoutExpired):
+            module_version = ""
     return {
         "version": module_version or dkms_version,
         "loaded": loaded,
@@ -2894,7 +2902,7 @@ def write_requested(config, requested):
 
 
 def write_factory_configuration(config):
-    """Restore product defaults without touching Debian or management networking."""
+    """Restore product defaults without touching the host OS or management networking."""
     base_platform = read_text(config["topology_base"])
     factory_topology = {
         group["key"]: {"layout": "bonded", "speed": 100000}
@@ -3041,15 +3049,35 @@ def version_key(value):
     match = re.fullmatch(r"(\d+)\.(\d+)\.(\d+)(?:[-+]([A-Za-z0-9._-]+))?", str(value))
     if not match:
         return None
-    return tuple(map(int, match.groups()[:3])) + (1 if match.group(4) is None else 0, match.group(4) or "")
+    suffix = (match.group(4) or "").lower()
+    if not suffix:
+        phase, sequence = 2, 0
+    elif suffix.startswith("rc"):
+        phase = 1
+        number = re.search(r"(?:^|[._-])(\d+)(?:$|[._-])", suffix[2:])
+        sequence = int(number.group(1)) if number else 0
+    else:
+        phase, sequence = 0, 0
+    return tuple(map(int, match.groups()[:3])) + (phase, sequence, suffix)
 
 
 def upgrade_version_state(candidate):
     current = installed_package_version()
     current_key = version_key(current)
     candidate_key = version_key(candidate)
-    available = current_key is None or (candidate_key is not None and candidate_key > current_key)
-    return {"current_version": current or "未知", "update_available": available}
+    if candidate_key is None:
+        relation = "unknown"
+    elif current_key is None or candidate_key > current_key:
+        relation = "upgrade"
+    elif candidate_key < current_key:
+        relation = "downgrade"
+    else:
+        relation = "current"
+    return {
+        "current_version": current or "未知",
+        "version_relation": relation,
+        "update_available": relation == "upgrade",
+    }
 
 
 def stage_upgrade_archive(data, filename="update.tar.gz"):
@@ -3089,11 +3117,12 @@ def stage_upgrade_archive(data, filename="update.tar.gz"):
             kit_root / "KIT-SHA256SUMS",
             kit_root / "RELEASE-MANIFEST.json",
             kit_root / "VERSION",
-            kit_root / "deployment" / "upgrade-debian13.sh",
+            kit_root / "deployment" / "upgrade.sh",
             kit_root / "webui" / "app.py",
         )
-        if not all(path.is_file() for path in required):
-            raise ApiError(400, "部署包不完整")
+        missing = [str(path.relative_to(kit_root)) for path in required if not path.is_file()]
+        if missing:
+            raise ApiError(400, "部署包不完整：缺少 " + "、".join(missing))
         verify_kit_manifest(kit_root)
         version = (kit_root / "VERSION").read_text(encoding="utf-8").strip()
         if not re.fullmatch(r"[0-9]+(?:\.[0-9]+){2}(?:[-+][A-Za-z0-9._-]+)?", version):
@@ -3167,11 +3196,42 @@ def download_release_url(url, max_bytes):
     return data
 
 
-def stage_latest_upgrade():
+def release_package(release):
+    assets = release.get("assets")
+    if not isinstance(assets, list):
+        return None
+    packages = [
+        asset for asset in assets if isinstance(asset, dict) and re.fullmatch(
+            r"pe31625g24dira-deploy-kit-[A-Za-z0-9._+-]+\.tar\.gz", str(asset.get("name", ""))
+        )
+    ]
+    if len(packages) != 1:
+        return None
+    version_match = re.fullmatch(
+        r"pe31625g24dira-deploy-kit-([A-Za-z0-9._+-]+)\.tar\.gz", packages[0]["name"]
+    )
+    key = version_key(version_match.group(1)) if version_match else None
+    return (key, packages[0]) if key is not None else None
+
+
+def stage_latest_upgrade(include_prerelease=False, allow_downgrade=False):
     try:
-        release = json.loads(download_release_url(RELEASE_API, 2 * 1024 * 1024))
+        value = json.loads(download_release_url(
+            RELEASES_API if include_prerelease else RELEASE_API, 2 * 1024 * 1024
+        ))
     except json.JSONDecodeError:
         raise ApiError(502, "GitHub Release 元数据无效") from None
+    if include_prerelease:
+        choices = [
+            (release_package(item), item) for item in value
+            if isinstance(item, dict) and not item.get("draft")
+        ] if isinstance(value, list) else []
+        choices = [(package, item) for package, item in choices if package]
+        if not choices:
+            raise ApiError(404, "尚未发布可用版本")
+        _, release = max(choices, key=lambda choice: choice[0][0])
+    else:
+        release = value
     assets = release.get("assets")
     if not isinstance(assets, list):
         raise ApiError(502, "GitHub Release 没有有效资产列表")
@@ -3188,6 +3248,23 @@ def stage_latest_upgrade():
         raise ApiError(502, "Release 中必须且只能包含一个通用部署包")
     package = packages[0]
     package_name = package["name"]
+    version_match = re.fullmatch(
+        r"pe31625g24dira-deploy-kit-([A-Za-z0-9._+-]+)\.tar\.gz", package_name
+    )
+    candidate_version = version_match.group(1) if version_match else ""
+    state = upgrade_version_state(candidate_version)
+    if state["version_relation"] == "current" or (
+        state["version_relation"] == "downgrade" and not allow_downgrade
+    ):
+        return {
+            "version": candidate_version,
+            "filename": package_name,
+            "sha256": "",
+            "size": 0,
+            "release": str(release.get("tag_name", "")),
+            "staged": False,
+            **state,
+        }
     sidecars = [
         asset
         for asset in assets
@@ -3211,7 +3288,7 @@ def stage_latest_upgrade():
     if not hmac.compare_digest(digest, match.group(1).lower()):
         raise ApiError(502, "Release 部署包 SHA-256 校验失败")
     metadata = stage_upgrade_archive(archive, package_name)
-    return {**metadata, "release": str(release.get("tag_name", ""))}
+    return {**metadata, "release": str(release.get("tag_name", "")), "staged": True}
 
 
 def pending_upgrade():
@@ -3221,18 +3298,31 @@ def pending_upgrade():
         kit_root = pending / metadata["root"]
     except (OSError, KeyError, json.JSONDecodeError):
         raise ApiError(409, "尚未上传有效更新包") from None
-    if not (kit_root / "deployment" / "upgrade-debian13.sh").is_file():
+    if not (kit_root / "deployment" / "upgrade.sh").is_file():
         raise ApiError(409, "暂存的更新包不完整")
     return metadata, kit_root
 
 
-def audit_pending_upgrade():
+def upgrade_allowed(metadata, allow_downgrade=False):
+    relation = metadata.get("version_relation") or upgrade_version_state(metadata.get("version"))["version_relation"]
+    if relation == "upgrade":
+        return True
+    if relation == "downgrade" and allow_downgrade:
+        return True
+    if relation == "downgrade":
+        raise ApiError(409, "这是较旧版本；如需降级，请先启用“允许降级”")
+    if relation == "current":
+        raise ApiError(409, "已是当前版本，无需更新")
+    raise ApiError(409, "无法比较更新包版本")
+
+
+def audit_pending_upgrade(allow_downgrade=False):
     metadata, kit_root = pending_upgrade()
-    if not metadata.get("update_available"):
-        return {**metadata, "ok": True, "output": "已是最新版本，无需更新。"}
+    upgrade_allowed(metadata, allow_downgrade)
+    script = kit_root / "deployment" / "upgrade.sh"
     try:
         result = subprocess.run(
-            ["/bin/bash", str(kit_root / "deployment" / "upgrade-debian13.sh"), "--audit"],
+            ["/bin/bash", str(script), "--audit"],
             cwd=kit_root,
             capture_output=True,
             text=True,
@@ -3247,15 +3337,15 @@ def audit_pending_upgrade():
     return {**metadata, "ok": True, "output": output}
 
 
-def start_pending_upgrade():
+def start_pending_upgrade(allow_downgrade=False):
     metadata, kit_root = pending_upgrade()
-    if not metadata.get("update_available"):
-        raise ApiError(409, "已是最新版本，无需更新")
+    upgrade_allowed(metadata, allow_downgrade)
+    script = kit_root / "deployment" / "upgrade.sh"
     unit = f"pe31625g24dira-web-upgrade-{int(time.time())}"
     command = [
         "/bin/systemd-run", "--unit", unit, "--property=Type=oneshot", "--no-block",
         f"--working-directory={kit_root}", "/bin/bash",
-        str(kit_root / "deployment" / "upgrade-debian13.sh"), "--apply",
+        str(script), "--apply",
     ]
     result = subprocess.run(command, capture_output=True, text=True, timeout=15, check=False)
     if result.returncode:
@@ -4971,21 +5061,24 @@ class Handler(BaseHTTPRequestHandler):
                 )
                 return self.json_response(201, value)
             if path == "/api/system/upgrade/latest":
-                self.body_json()
+                body = self.body_json()
                 if self.app_state.operation_lock.locked():
                     raise ApiError(409, "硬件配置或 SDK 读取正在进行")
-                return self.json_response(201, stage_latest_upgrade())
+                return self.json_response(201, stage_latest_upgrade(
+                    bool(body.get("include_prerelease")), bool(body.get("allow_downgrade"))
+                ))
             if path == "/api/system/upgrade/audit":
-                self.body_json()
-                return self.json_response(200, audit_pending_upgrade())
+                body = self.body_json()
+                return self.json_response(200, audit_pending_upgrade(bool(body.get("allow_downgrade"))))
             if path == "/api/system/upgrade/apply":
                 body = self.body_json()
                 if not isinstance(body, dict) or body.get("confirm") is not True:
                     raise ApiError(400, "请确认执行更新")
                 if self.app_state.operation_lock.locked():
                     raise ApiError(409, "硬件配置或 SDK 读取正在进行")
-                audit_pending_upgrade()
-                return self.json_response(202, start_pending_upgrade())
+                allow_downgrade = bool(body.get("allow_downgrade"))
+                audit_pending_upgrade(allow_downgrade)
+                return self.json_response(202, start_pending_upgrade(allow_downgrade))
             if path == "/api/config/import":
                 value = validate_configuration_import(
                     self.app_state.config, self.body_json()

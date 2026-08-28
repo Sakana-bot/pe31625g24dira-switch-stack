@@ -64,15 +64,15 @@ kit=$(find "$work" -mindepth 1 -maxdepth 1 -type d -name 'pe31625g24dira-*kit-*'
 [ -n "$kit" ] || { echo "Invalid release archive." >&2; exit 1; }
 
 if [ "$MODE" = upgrade ]; then
-    bash "$kit/deployment/upgrade-debian13.sh" --audit
-    bash "$kit/deployment/upgrade-debian13.sh" --apply
+    bash "$kit/deployment/upgrade.sh" --audit
+    bash "$kit/deployment/upgrade.sh" --apply
 else
     runtime=${asset_data[3]}
     curl --fail --location --silent --show-error "${headers[@]}" "${asset_data[4]}" -o "$work/$runtime"
     curl --fail --location --silent --show-error "${headers[@]}" "${asset_data[5]}" -o "$work/$runtime.sha256"
     (cd "$work" && sha256sum -c "$runtime.sha256")
     echo "Building the fm10k UIO driver locally for kernel $(uname -r)."
-    bash "$kit/deployment/deploy-debian13.sh" --runtime "$work/$runtime" --audit
-    bash "$kit/deployment/deploy-debian13.sh" --runtime "$work/$runtime"
+    bash "$kit/deployment/deploy.sh" --runtime "$work/$runtime" --audit
+    bash "$kit/deployment/deploy.sh" --runtime "$work/$runtime"
     echo "Installation complete. Reboot the board when ready."
 fi

@@ -10,7 +10,7 @@
 </head>
 <body>
   <div class="app-shell">
-    <aside class="sidebar">
+    <aside id="sidebar" class="sidebar">
       <div class="brand"><div><strong>PE31625G24DIRA</strong><small>交换机管理</small></div></div>
       <nav class="classic-nav" aria-label="主导航">
         <div class="nav-group open active">
@@ -43,10 +43,11 @@
         <div class="sidebar-foot"><span id="service-dot" class="status-dot"></span><div><strong id="service-text">正在连接</strong><small id="version-text">—</small></div></div>
       </div>
     </aside>
+    <button id="mobile-nav-backdrop" class="mobile-nav-backdrop" type="button" aria-label="关闭导航" tabindex="-1"></button>
 
     <div class="workspace">
       <header class="topbar">
-        <div class="topbar-title"><h1 id="top-page-title">概览</h1></div>
+        <div class="topbar-leading"><button id="mobile-nav-toggle" class="icon-button mobile-nav-toggle" type="button" aria-label="打开导航" aria-controls="sidebar" aria-expanded="false"><svg class="app-icon lucide-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h16"/></svg></button><div class="topbar-title"><h1 id="top-page-title">概览</h1></div></div>
         <div class="top-actions"><button id="system-power" class="icon-button power-button" type="button" aria-label="电源操作" title="电源操作"><svg class="app-icon lucide-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2v10"/><path d="M18.4 6.6a9 9 0 1 1-12.77.04"/></svg></button><button id="logout" class="button quiet" type="button">退出</button></div>
       </header>
 
@@ -214,7 +215,7 @@
                 <div><dt>IES SDK</dt><dd id="component-ies">—</dd></div>
                 <div><dt>TestPoint</dt><dd id="component-testpoint">—</dd></div>
                 <div><dt>fm10k UIO/IES 驱动</dt><dd id="component-driver">—</dd></div>
-                <div><dt>驱动源码</dt><dd>Linux 6.12.101 + Intel fm10k 0.27.1</dd></div>
+                <div><dt>源码基线</dt><dd>Linux 6.12.101 + Intel fm10k 0.27.1</dd></div>
               </dl>
             </section>
             <section class="panel">
@@ -372,6 +373,9 @@
             <div class="operation-section">
               <h2>更新</h2>
               <div class="operation-actions"><button id="upgrade-latest" class="button secondary" type="button">在线检查</button><label class="button secondary file-button" for="upgrade-file">上传更新包</label><input id="upgrade-file" type="file" accept="application/gzip,.gz" hidden><button id="upgrade-apply" class="button primary" type="button" disabled>执行更新</button></div>
+              <div class="upgrade-options">
+                <label><span>包含预发布版本</span><button id="upgrade-prerelease" class="toggle-switch" type="button" role="switch" aria-checked="false"><i></i></button></label>
+              </div>
               <div id="upgrade-package" class="upgrade-package" hidden>
                 <span><small>更新包</small><strong id="upgrade-file-name"></strong></span>
                 <span><small>版本</small><strong id="upgrade-version"></strong></span>

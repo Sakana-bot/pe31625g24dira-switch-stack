@@ -23,8 +23,19 @@ class SystemManagementTests(unittest.TestCase):
     def test_upgrade_version_comparison(self):
         with mock.patch.object(APP, "installed_package_version", return_value="0.9.0"):
             self.assertTrue(APP.upgrade_version_state("1.0.0")["update_available"])
-            self.assertFalse(APP.upgrade_version_state("0.9.0")["update_available"])
-            self.assertFalse(APP.upgrade_version_state("0.8.9")["update_available"])
+            self.assertEqual(APP.upgrade_version_state("0.9.0")["version_relation"], "current")
+            self.assertEqual(APP.upgrade_version_state("0.8.9")["version_relation"], "downgrade")
+
+    def test_release_candidate_ordering(self):
+        self.assertGreater(APP.version_key("1.3.0-rc.2"), APP.version_key("1.3.0-rc.1"))
+        self.assertGreater(APP.version_key("1.3.0"), APP.version_key("1.3.0-rc.2"))
+        self.assertGreater(APP.version_key("1.3.0-rc.1"), APP.version_key("1.3.0-dev"))
+
+    def test_downgrade_requires_explicit_permission(self):
+        metadata = {"version_relation": "downgrade"}
+        with self.assertRaises(APP.ApiError):
+            APP.upgrade_allowed(metadata)
+        self.assertTrue(APP.upgrade_allowed(metadata, allow_downgrade=True))
 
     def test_log_sources_are_fixed_commands(self):
         self.assertEqual(APP.system_log_command("kernel"), ["/usr/bin/dmesg", "--color=never"])
@@ -76,6 +87,20 @@ class SystemManagementTests(unittest.TestCase):
             value = APP.stage_latest_upgrade()
         self.assertEqual(value["release"], "v1.0.0")
         self.assertEqual(value["filename"], name)
+
+    def test_older_online_release_is_classified_before_download(self):
+        name = "pe31625g24dira-deploy-kit-1.2.0.tar.gz"
+        release = json.dumps({
+            "tag_name": "v1.2.0",
+            "assets": [{"name": name, "browser_download_url": "https://github.com/package"}],
+        }).encode()
+        with mock.patch.object(APP, "download_release_url", return_value=release) as download, mock.patch.object(
+            APP, "installed_package_version", return_value="1.3.0-dev"
+        ):
+            value = APP.stage_latest_upgrade()
+        self.assertEqual(value["version_relation"], "downgrade")
+        self.assertFalse(value["staged"])
+        self.assertEqual(download.call_count, 1)
 
 
 class TopologyTests(unittest.TestCase):
