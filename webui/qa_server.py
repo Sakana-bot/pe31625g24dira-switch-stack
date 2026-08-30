@@ -103,6 +103,7 @@ class Handler(BaseHTTPRequestHandler):
                 "username": "admin",
                 "system_settings": {
                     "hostname": "pe31625-preview",
+                    "timezone": "Asia/Shanghai",
                 },
             }
             return self.send_bytes(
@@ -388,7 +389,10 @@ class Handler(BaseHTTPRequestHandler):
                 "application/json; charset=utf-8",
             )
         if self.path == "/api/system/settings":
-            payload = {"hostname": body.get("hostname", "pe31625-preview")}
+            payload = {
+                "hostname": body.get("hostname", "pe31625-preview"),
+                "timezone": body.get("timezone", "Asia/Shanghai"),
+            }
             return self.send_bytes(json.dumps(payload).encode("utf-8"), "application/json; charset=utf-8")
         if self.path in ("/api/logout", "/api/login"):
             return self.send_bytes(b'{"ok":true}', "application/json; charset=utf-8")

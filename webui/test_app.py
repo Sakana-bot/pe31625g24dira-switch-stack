@@ -116,6 +116,16 @@ class SystemManagementTests(unittest.TestCase):
         with self.assertRaises(APP.ApiError):
             APP.apply_system_settings({"hostname": "bad hostname"})
 
+    def test_system_settings_reject_invalid_timezone_before_writing(self):
+        with mock.patch.object(APP, "valid_timezone", return_value=False), mock.patch.object(
+            APP.subprocess, "run"
+        ) as run:
+            with self.assertRaises(APP.ApiError):
+                APP.apply_system_settings(
+                    {"hostname": "test-switch", "timezone": "invalid/timezone"}
+                )
+            run.assert_not_called()
+
     def test_upgrade_archive_rejects_traversal(self):
         stream = io.BytesIO()
         with tarfile.open(fileobj=stream, mode="w:gz") as archive:
@@ -699,6 +709,50 @@ Port           : 4                  4                  4
             [module["temperature_c"] for module in parsed["optics"]["modules"]],
             [50.96, 47.84],
         )
+
+    def test_failed_optical_temperature_keeps_last_valid_sample(self):
+        current = APP.parse_optics_temperatures(
+            "\n".join(
+                [
+                    "PE31625G24DIRA_OPTICS_TEMPERATURE mpo=1 status=230 raw=1600",
+                    "PE31625G24DIRA_OPTICS_TEMPERATURE mpo=2 status=0 raw=2FD7",
+                ]
+            )
+        )
+        previous = APP.parse_optics_temperatures(
+            "\n".join(
+                [
+                    "PE31625G24DIRA_OPTICS_TEMPERATURE mpo=1 status=0 raw=32F6",
+                    "PE31625G24DIRA_OPTICS_TEMPERATURE mpo=2 status=0 raw=2FC0",
+                ]
+            )
+        )
+        merged = APP.preserve_optics_temperatures(current, previous)
+        self.assertEqual(merged["state"], "ready")
+        self.assertEqual(merged["modules"][0]["temperature_c"], 50.96)
+        self.assertEqual(merged["modules"][1]["temperature_c"], 47.84)
+
+    def test_optical_temperature_failure_is_retried_once(self):
+        first = "\n".join(
+            [
+                "MAIN TEMP SENSOR : 35.5 C",
+                "PE31625G24DIRA_OPTICS_TEMPERATURE mpo=1 status=230 raw=1600",
+                "PE31625G24DIRA_OPTICS_TEMPERATURE mpo=2 status=0 raw=2FD7",
+            ]
+        )
+        retry = "\n".join(
+            [
+                "MAIN TEMP SENSOR : 35.5 C",
+                "PE31625G24DIRA_OPTICS_TEMPERATURE mpo=1 status=0 raw=32F6",
+                "PE31625G24DIRA_OPTICS_TEMPERATURE mpo=2 status=0 raw=2FD7",
+            ]
+        )
+        state = APP.State({"sensor_script": "/tmp/sensors.tp"})
+        with mock.patch.object(APP, "queue_testpoint_script", side_effect=[first, retry]) as read:
+            sensors = APP.refresh_sensor_cache(state)
+        self.assertEqual(read.call_count, 2)
+        self.assertEqual(sensors["optics"]["state"], "ready")
+        self.assertEqual(sensors["optics"]["modules"][0]["temperature_c"], 50.96)
 
     def test_poweroff_requires_explicit_boolean_confirmation(self):
         self.assertTrue(APP.validate_poweroff_request({"confirm": True}))

@@ -83,11 +83,18 @@ async function saveAccount(event) {
 
 async function saveSystemSettings(event) {
   event.preventDefault();
-  if (!event.currentTarget.checkValidity()) return showToast('请输入有效的主机名');
+  if (!event.currentTarget.checkValidity()) return showToast('请输入有效的主机名和系统时区');
   const button = $('#system-settings-submit'); button.disabled = true;
   try {
-    const value = await api('/api/system/settings', { method: 'POST', body: JSON.stringify({ hostname: $('#system-hostname').value.trim() }) });
+    const value = await api('/api/system/settings', {
+      method: 'POST',
+      body: JSON.stringify({
+        hostname: $('#system-hostname').value.trim(),
+        timezone: $('#system-timezone').value.trim(),
+      }),
+    });
     $('#system-hostname').value = value.hostname;
+    $('#system-timezone').value = value.timezone;
     showToast('系统设置已保存', 'success');
   } catch (error) {
     showToast(error.message);

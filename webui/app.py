@@ -2819,12 +2819,65 @@ def parse_hardware_sensors(output):
     return sensors
 
 
+def preserve_optics_temperatures(current, *fallbacks):
+    """Keep the newest valid value for each module without exposing stale state."""
+    result = dict(current or {})
+    modules = {
+        int(module["mpo"]): dict(module)
+        for module in result.get("modules", [])
+    }
+    for fallback in fallbacks:
+        for module in (fallback or {}).get("modules", []):
+            mpo = int(module["mpo"])
+            existing = modules.get(mpo)
+            if (
+                (not existing or existing.get("temperature_c") is None)
+                and module.get("temperature_c") is not None
+            ):
+                modules[mpo] = dict(module)
+    result["modules"] = [
+        modules.get(
+            mpo,
+            {
+                "mpo": mpo,
+                "temperature_c": None,
+                "temperature_raw": None,
+                "temperature_status": None,
+            },
+        )
+        for mpo in (1, 2)
+    ]
+    readable = sum(module.get("temperature_c") is not None for module in result["modules"])
+    result["state"] = "ready" if readable == 2 else "partial" if readable else "error"
+    return result
+
+
 def refresh_sensor_cache(state):
     script = state.config.get("sensor_script", "/etc/pe31625g24dira/webui/sensors.tp")
-    sensors = parse_hardware_sensors(
-        queue_testpoint_script(
-            state.config, script, SENSOR_COMPLETE_MARKER, timeout=20
+    with state.telemetry_lock:
+        previous_optics = state.sensor_cache.get("optics", {})
+
+    def read_sensors():
+        return parse_hardware_sensors(
+            queue_testpoint_script(
+                state.config, script, SENSOR_COMPLETE_MARKER, timeout=20
+            )
         )
+
+    sensors = read_sensors()
+    first_optics = sensors["optics"]
+    if any(module.get("temperature_c") is None for module in first_optics["modules"]):
+        try:
+            retry = read_sensors()
+        except Exception:
+            sensors["optics"] = preserve_optics_temperatures(
+                first_optics, previous_optics
+            )
+        else:
+            retry["optics"] = preserve_optics_temperatures(retry["optics"], first_optics)
+            sensors = retry
+    sensors["optics"] = preserve_optics_temperatures(
+        sensors["optics"], previous_optics
     )
     with state.telemetry_lock:
         state.sensor_cache = sensors
@@ -3054,8 +3107,55 @@ def system_log_payload(source):
     }
 
 
+TIMEZONE_ROOT = Path("/usr/share/zoneinfo")
+
+
+def current_timezone():
+    try:
+        target = Path("/etc/localtime").resolve()
+        return target.relative_to(TIMEZONE_ROOT.resolve()).as_posix()
+    except (OSError, ValueError):
+        pass
+    try:
+        value = Path("/etc/timezone").read_text(encoding="utf-8").strip()
+        if value:
+            return value
+    except OSError:
+        pass
+    return "UTC"
+
+
+def valid_timezone(value):
+    if not value or len(value) > 128:
+        return False
+    relative = PurePosixPath(value)
+    if relative.is_absolute() or any(part in {"", ".", ".."} for part in relative.parts):
+        return False
+    try:
+        target = (TIMEZONE_ROOT / Path(*relative.parts)).resolve()
+        target.relative_to(TIMEZONE_ROOT.resolve())
+        return target.is_file()
+    except (OSError, ValueError):
+        return False
+
+
+def set_system_timezone(value):
+    target = (TIMEZONE_ROOT / Path(*PurePosixPath(value).parts)).resolve()
+    temporary = Path("/etc") / f".pe31625g24dira-localtime-{os.getpid()}"
+    with suppress(OSError):
+        temporary.unlink()
+    try:
+        os.symlink(target, temporary)
+        os.replace(temporary, "/etc/localtime")
+        atomic_write("/etc/timezone", f"{value}\n", 0o644)
+    except Exception:
+        with suppress(OSError):
+            temporary.unlink()
+        raise
+
+
 def system_settings_payload():
-    return {"hostname": os.uname().nodename}
+    return {"hostname": os.uname().nodename, "timezone": current_timezone()}
 
 
 def apply_system_settings(body):
@@ -3064,15 +3164,27 @@ def apply_system_settings(body):
     hostname = str(body.get("hostname", "")).strip()
     if not re.fullmatch(r"[A-Za-z0-9](?:[A-Za-z0-9.-]{0,61}[A-Za-z0-9])?", hostname):
         raise ApiError(400, "主机名格式无效")
-    result = subprocess.run(
-        ["/usr/bin/hostnamectl", "set-hostname", hostname],
-        capture_output=True,
-        text=True,
-        timeout=10,
-        check=False,
-    )
-    if result.returncode:
-        raise ApiError(500, clean_service_log(result.stderr) or "系统设置保存失败")
+    timezone = str(body["timezone"] if "timezone" in body else current_timezone()).strip()
+    if not valid_timezone(timezone):
+        raise ApiError(400, "时区无效，请使用 Asia/Shanghai 等 IANA 时区名称")
+    if timezone != current_timezone():
+        try:
+            set_system_timezone(timezone)
+        except OSError as exc:
+            raise ApiError(500, f"时区设置失败: {exc}") from None
+    commands = []
+    if hostname != os.uname().nodename:
+        commands.append(["/usr/bin/hostnamectl", "set-hostname", hostname])
+    for command in commands:
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+        if result.returncode:
+            raise ApiError(500, clean_service_log(result.stderr) or "系统设置保存失败")
     return system_settings_payload()
 
 

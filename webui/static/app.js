@@ -707,7 +707,10 @@ async function loadState(resetDraft = true) {
   renderSystemInformation(state.system_information || {});
   $('#version-text').textContent = `管理软件 ${state.version}`;
   $('#account-username').value = state.username || '';
-  if (state.system_settings) $('#system-hostname').value = state.system_settings.hostname || '';
+  if (state.system_settings) {
+    $('#system-hostname').value = state.system_settings.hostname || '';
+    $('#system-timezone').value = state.system_settings.timezone || 'UTC';
+  }
   renderPorts(); renderStatsPortSelect(); renderVlans(); renderL2(); renderFanCurve();
 }
 
