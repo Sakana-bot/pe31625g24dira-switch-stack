@@ -2,6 +2,7 @@
 
 import binascii
 import os
+import queue
 import threading
 import time
 import uuid
@@ -18,6 +19,8 @@ class RuntimeState:
         self.jobs = {}
         self.jobs_lock = threading.Lock()
         self.operation_lock = threading.Lock()
+        self.operation_queue = queue.Queue(maxsize=6)
+        self.active_operation_id = None
         self.auth_failures = {}
         self.auth_failures_lock = threading.Lock()
         self.sessions = {}
@@ -31,11 +34,13 @@ class RuntimeState:
             "sampled": None,
             "temperatures": [],
             "voltages": [],
+            "optics": {"state": "pending", "modules": []},
         }
-        self.transceiver_cache = {"state": "pending", "sampled": None, "modules": []}
+        self.optics_cache = {"state": "pending", "sampled": None, "modules": []}
         self.l2_lock = threading.Lock()
         self.lldp_monitor = None
         self.lldp_mac_to_endpoint = {}
+        threading.Thread(target=self._operation_dispatcher, daemon=True).start()
 
     def new_session(self, username):
         now = int(time.time())
@@ -123,14 +128,48 @@ class RuntimeState:
             return dict(value) if value else None
 
     def start_operation(self, kind, target, *args):
-        """Start one serialized hardware/SDK operation, or return None when busy."""
-        if not self.operation_lock.acquire(False):
-            return None
+        """Queue one hardware/SDK operation for serialized execution."""
         job = self.new_job(kind)
         try:
-            thread = threading.Thread(target=target, args=(self, job["id"], *args), daemon=True)
-            thread.start()
-        except Exception:
-            self.operation_lock.release()
-            raise
-        return job
+            ahead = self.operation_queue.qsize() + (1 if self.operation_lock.locked() else 0)
+            self.update_job(
+                job["id"],
+                message="SDK 操作已排队" if ahead else "正在准备 SDK 操作",
+                queue_ahead=ahead,
+            )
+            self.operation_queue.put_nowait((job["id"], target, args))
+        except queue.Full:
+            self.update_job(
+                job["id"],
+                state="failed",
+                message="SDK 操作队列已满",
+                error="请等待当前操作完成后重试",
+            )
+            return None
+        return self.get_job(job["id"])
+
+    def operation_busy(self):
+        return (
+            self.active_operation_id is not None
+            or self.operation_lock.locked()
+            or not self.operation_queue.empty()
+        )
+
+    def _operation_dispatcher(self):
+        while True:
+            job_id, target, args = self.operation_queue.get()
+            self.active_operation_id = job_id
+            try:
+                self.update_job(job_id, message="等待当前 SDK 操作完成", queue_ahead=0)
+                self.operation_lock.acquire()
+                target(self, job_id, *args)
+            except Exception as exc:
+                self.update_job(
+                    job_id,
+                    state="failed",
+                    message="SDK 操作异常退出",
+                    error=str(exc),
+                )
+            finally:
+                self.active_operation_id = None
+                self.operation_queue.task_done()

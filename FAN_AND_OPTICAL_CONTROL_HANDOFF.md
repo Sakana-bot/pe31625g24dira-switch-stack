@@ -386,14 +386,16 @@ CLI -> mgmtd -> switchd RPC method 90
 - mux `0x01` 和 `0x02` 下的 `0x40` lower page 内容不同，确认确实访问了两块独立 FCI；
 - TX 设备 `0x50` page 0 可稳定读取身份：两块都是 `FCI MergeOptics / 10124588-211`，序列号分别为 `ESOM1647-00011`、`A1OM1704-00028`，日期码分别为 `20161114`、`20170116`；
 - page 1 选择、读取、恢复均返回 `FM_OK`，且 page 1 与 page 0 内容明显不同，确认分页操作真实生效；
+- 两块 RX 设备在 common upper page 0 的 CXP capability byte `0x8c` 都返回 `0x04`：只声明 internal temperature monitor；逐 Lane RX input power（bit 5）、TX light output power（bit 6）和 TX bias（bit 7）均未声明；
 - 无外部链路时，两块模块 `page 1:0xce..0xe5` 均为 24 字节全零；
 - 接入一路光纤后，逻辑端口 1 明确为 `UP`、Signal Detect 为 `Y`，但同一区域仍为 24 字节全零；
 - 扫描 RX `0x40` 和 TX `0x50` 的 lower page 与 page 0–15，除 page 0/1 外其余页面为全零或全 `0xff`，没有发现可确认为 12 路 RX 功率的连续向量；
+- 扫描 mux 分支下的其余应答地址后，`0x59` 和 `0x64` 在 mux 关闭时仍可访问（其中 `0x64` 是平台配置里的 PCA9538），`0x49` 的一次性非零内容读后清零且同样可在 mux 关闭时访问；这些都不是光引擎后端的实时 RSSI/ADC；
 - 在 EPL0 Lane 0 链路正常时拔纤对比，RX `0x40:0x08` 从 `0xfe` 变为 `0xff`，TX `0x50:0x06` 从 `0x02` 变为 `0x00`、`0x50:0x11` 从 `0x01` 变为 `0x00`，确认这些是 LOS/链路状态位；此前怀疑的 `0x40:0x0c..0x0d = 0x0e7f` 不随插拔变化，不是光功率。
 
-因此当前结论是：模块身份并未不可读，旧界面只是没有把 `0x50` 的身份读取与功率读取分开。WebUI 现在独立展示身份；`0x40/page 1/0xce` 的功率映射则不适用于本机这两块 2016/2017 年生产的 `10124588-211`，或还缺少未公开的刷新/解锁步骤。WebUI 仅在 24 字节功率向量非零时解码，绝不把全零显示为有效光功率。
+因此当前结论是：模块身份并未不可读，旧界面只是没有把 `0x50` 的身份读取与功率读取分开；但本机 B0 上这两块 2016/2017 年生产的 `10124588-211` **没有通过 CXP 管理接口声明或输出可用的光功率监控数据**。大散热板上同一 `page 1:0xce` 代码能返回数据，应视为其 OBT 版本/固件能力不同，不能反推 B0 只缺一个通用解锁开关。厂商密码页、编程接口或未公开固件仍无法从现有资料绝对排除，但在没有寄存器定义和校准参数时不具备可验证、可产品化的读取路径。WebUI 仅在 24 字节功率向量非零时解码，绝不把全零显示为有效光功率。
 
-快速复查脚本为 [`diagnostics/pe31625g24dira-fci-rx-power-direct.tp`](diagnostics/pe31625g24dira-fci-rx-power-direct.tp)；完整布局扫描脚本为 [`diagnostics/pe31625g24dira-fci-layout-scan.tp`](diagnostics/pe31625g24dira-fci-layout-scan.tp)。两者都只临时选择 mux/page 并在结束时恢复。若后续取得大散热实板或完整 FCI 应用说明，应在至少一路已确认 Link Up 的条件下使用同一脚本对照，不能把 AP8 大散热结果直接套用到 `sil001`。
+当前读取逻辑由 WebUI 临时生成 TestPoint 脚本，只选择 mux/page、读取后恢复，不在板卡上遗留诊断文件。若后续取得大散热实板或完整 FCI 应用说明，应在至少一路已确认 Link Up 的条件下复用相同的 `0x8c` capability 与 `page 1:0xce` 对照流程，不能把 AP8 大散热结果直接套用到 `sil001`。
 
 ## 5. 安全边界
 

@@ -17,7 +17,7 @@ export function createApiClient(getCsrf) {
 
 export async function waitForJob(api, job, onProgress, options = {}) {
   const intervalMs = options.intervalMs || 1200;
-  const timeoutMs = options.timeoutMs || 180000;
+  const timeoutMs = options.timeoutMs || 300000;
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     await new Promise((resolve) => window.setTimeout(resolve, intervalMs));
