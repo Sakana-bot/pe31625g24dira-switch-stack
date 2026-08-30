@@ -5008,6 +5008,12 @@ class Handler(BaseHTTPRequestHandler):
                 return self.serve_static("api-client.js", "application/javascript; charset=utf-8")
             if path == "/controls.js":
                 return self.serve_static("controls.js", "application/javascript; charset=utf-8")
+            if path == "/dashboard.js":
+                return self.serve_static("dashboard.js", "application/javascript; charset=utf-8")
+            if path == "/diagnostics.js":
+                return self.serve_static("diagnostics.js", "application/javascript; charset=utf-8")
+            if path == "/maintenance.js":
+                return self.serve_static("maintenance.js", "application/javascript; charset=utf-8")
             if path == "/api/state":
                 payload = platform_payload(self.app_state.config)
                 _, parsed = parse_platform(self.app_state.config["platform_persistent"])

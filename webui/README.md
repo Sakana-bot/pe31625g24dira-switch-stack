@@ -58,7 +58,10 @@ python .\webui\qa_server.py
 前端文件位于 `webui/static/`：
 
 - `index.html`：页面结构
-- `app.js`：页面路由、状态与业务交互
+- `app.js`：页面编排、交换配置流程与事件绑定
+- `dashboard.js`：实时遥测、概览和端口统计渲染
+- `diagnostics.js`：MAC 表、Lane 与光引擎诊断
+- `maintenance.js`：日志、备份升级、电源和系统信息
 - `controls.js`：自绘下拉、多选和数字步进控件
 - `api-client.js`：API 与异步作业轮询
 - `theme.js`：浅色、深色及跟随系统
@@ -75,6 +78,9 @@ python .\webui\qa_server.py
 ```bash
 python3 -m unittest webui.test_app
 node --check webui/static/app.js
+node --check webui/static/dashboard.js
+node --check webui/static/diagnostics.js
+node --check webui/static/maintenance.js
 ```
 
 前端样式修改只需执行基础语法检查并在本地预览核对；涉及端口、VLAN、升级或硬件写入时再按风险补充实机验证。

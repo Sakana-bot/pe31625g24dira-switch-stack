@@ -921,6 +921,17 @@ class FirstRunHttpTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertIn("application/javascript", headers["Content-Type"])
         self.assertIn(b"enhanceSelects", payload)
+        for module_name, marker in (
+            ("dashboard.js", b"createDashboard"),
+            ("diagnostics.js", b"createDiagnostics"),
+            ("maintenance.js", b"createMaintenance"),
+        ):
+            status, headers, payload = self.request(
+                "GET", "/" + module_name, headers={"Cookie": cookie}
+            )
+            self.assertEqual(status, 200)
+            self.assertIn("application/javascript", headers["Content-Type"])
+            self.assertIn(marker, payload)
         status, headers, payload = self.request(
             "GET", "/backup", headers={"Cookie": cookie}
         )
