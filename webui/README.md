@@ -10,12 +10,13 @@ Switch Manager 是 PE31625G24DIRA Switch Stack 的管理界面，与仓库根目
 - 端口：EPL 拆分/聚合、10G/25G/40G/100G 速率、端口名称、发光与转发开关、RMON 统计。
 - VLAN：Access、Trunk、Hybrid、Native VLAN、Tagged VLAN 和 MAC 地址表。
 - 网络功能：环路保护、风暴抑制、被动 LLDP 邻居和端口镜像。
-- 硬件：Linux hwmon、FM10840 温度/电压、光引擎诊断和风扇曲线。
+- 传感器：Linux hwmon、FM10840 温度/电压和板载光引擎身份、温度。
+- 散热：风扇转速、温度阈值和硬件风扇曲线。
 - 日志：本次启动的系统、内核和交换服务日志，只允许读取固定白名单来源。
 - 备份与升级：逻辑配置导入导出、恢复默认配置、部署包检查与升级。
 - 设置：主机名、明暗模式、流量单位和 Web 管理员账号。
 
-高频链路与 RMON 数据直接从 `/dev/uio0` 读取；传感器、端口配置、VLAN、风扇和光引擎操作统一排队到常驻 TestPoint，避免多个进程同时占用 FM10840 SDK。
+高频链路与 RMON 数据直接从 `/dev/uio0` 读取；传感器、端口配置、VLAN、风扇和光引擎操作统一进入常驻 TestPoint 的单一队列。手动操作优先，周期采样作为可合并的低优先级任务，避免多个进程同时占用 FM10840 SDK。
 
 ## 端口模型
 
@@ -62,6 +63,8 @@ python .\webui\qa_server.py
 - `api-client.js`：API 与异步作业轮询
 - `theme.js`：浅色、深色及跟随系统
 - `style.css`：布局、组件和主题样式
+
+后端入口为 `app.py`；`runtime_state.py` 负责会话、缓存与 SDK 任务队列，`l2_features.py` 负责二层功能模型，`optics.py` 只生成低频光引擎身份/RX 诊断脚本。周期温度读取保留在 `sensors.tp`，避免与身份缓存重复访问同一 I²C 器件。
 
 界面字号、字重、颜色与图标规则见根目录 `UI_STYLE_GUIDE.md`。新增样式应复用现有 token，避免为单个页面堆叠特例。
 

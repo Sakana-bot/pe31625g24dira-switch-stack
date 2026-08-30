@@ -5,7 +5,40 @@ import { closeCustomSelects, destroySelects, enhanceNumberInputs, enhanceSelects
 
 const TRAFFIC_UNIT_STORAGE_KEY = 'pe31625g24dira-traffic-unit';
 const PRERELEASE_STORAGE_KEY = 'pe31625g24dira-include-prerelease';
-const ui = { state: null, csrf: null, topology: {}, vlans: [], l2: null, l2Saved: null, pendingPortAdmin: null, vlanTaggedPort: null, vlanPreview: null, fan: null, importedConfig: null, upgradeReady: false, upgradeCandidate: null, upgradeIncludePrerelease: window.localStorage.getItem(PRERELEASE_STORAGE_KEY) === 'true', upgradeAllowDowngrade: false, live: {}, telemetry: null, pendingTelemetry: null, opticsRenderKey: null, busy: false, poweringOff: false, rebooting: false, telemetryTimer: null, healthTimer: null, logTimer: null, toastTimer: null, topologyPreview: null, logSource: 'system', logsLoaded: false, logAutoFollow: true, logRequestId: 0, trafficUnit: window.localStorage.getItem(TRAFFIC_UNIT_STORAGE_KEY) === 'bytes' ? 'bytes' : 'bits' };
+const ui = {
+  state: null,
+  csrf: null,
+  topology: {},
+  vlans: [],
+  l2: null,
+  l2Saved: null,
+  pendingPortAdmin: null,
+  vlanTaggedPort: null,
+  vlanPreview: null,
+  fan: null,
+  importedConfig: null,
+  upgradeReady: false,
+  upgradeCandidate: null,
+  upgradeIncludePrerelease: window.localStorage.getItem(PRERELEASE_STORAGE_KEY) === 'true',
+  upgradeAllowDowngrade: false,
+  live: {},
+  telemetry: null,
+  pendingTelemetry: null,
+  opticsRenderKey: null,
+  busy: false,
+  poweringOff: false,
+  rebooting: false,
+  telemetryTimer: null,
+  healthTimer: null,
+  logTimer: null,
+  toastTimer: null,
+  topologyPreview: null,
+  logSource: 'system',
+  logsLoaded: false,
+  logAutoFollow: true,
+  logRequestId: 0,
+  trafficUnit: window.localStorage.getItem(TRAFFIC_UNIT_STORAGE_KEY) === 'bytes' ? 'bytes' : 'bits',
+};
 const $ = (selector) => document.querySelector(selector);
 const speedLabel = (speed) => `${speed / 1000}G`;
 const clone = (value) => JSON.parse(JSON.stringify(value));
@@ -273,8 +306,14 @@ function renderTelemetry(data) {
   }
   renderActivePorts(data.port_status);
 
-  const sdk = data.switch_sensors; const switchGrid = $('#switch-sensors'); switchGrid.replaceChildren(); $('#voltage-sensors').replaceChildren();
-  renderOpticsTelemetry(sdk.optics || { state: sdk.state, sampled: sdk.sampled, modules: [] }, data.optics_diagnostic);
+  const sdk = data.switch_sensors;
+  const switchGrid = $('#switch-sensors');
+  switchGrid.replaceChildren();
+  $('#voltage-sensors').replaceChildren();
+  renderOpticsTelemetry(
+    sdk.optics || { state: sdk.state, sampled: sdk.sampled, modules: [] },
+    data.optics_diagnostic,
+  );
   if (sdk.state === 'ready') {
     const switchPoints = sdk.temperatures.filter((item) => item.category === 'switch');
     const summaryPoints = switchPoints.length ? switchPoints : sdk.temperatures;
@@ -289,12 +328,19 @@ function renderTelemetry(data) {
       const location = item.documented === false ? `TEMPERATURE[${index}]` : item.location;
       switchGrid.append(sensorBox(location || item.name.replace(' TEMP SENSOR', ''), item.celsius, '°C', 1));
     });
-    sdk.voltages.forEach((item) => $('#voltage-sensors').append(sensorBox(item.name.replace('VOLTAGE SENSOR ', ''), item.volts, ' V', 3)));
+    sdk.voltages.forEach((item) => {
+      $('#voltage-sensors').append(
+        sensorBox(item.name.replace('VOLTAGE SENSOR ', ''), item.volts, ' V', 3),
+      );
+    });
   } else {
     $('#overview-switch-temp').textContent = sdk.state === 'error' ? '读取失败' : '读取中';
     $('#cooling-switch-temp').textContent = sdk.state === 'error' ? '读取失败' : '读取中';
     $('#sensor-age').textContent = sdk.state === 'error' ? 'SDK 错误' : '等待 SDK';
-    const message = document.createElement('span'); message.className = 'muted'; message.textContent = sdk.error || '读取中…'; switchGrid.append(message);
+    const message = document.createElement('span');
+    message.className = 'muted';
+    message.textContent = sdk.error || '读取中…';
+    switchGrid.append(message);
   }
 
   const fanData = data.fans || { state: 'not-detected', fans: [] };

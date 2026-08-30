@@ -1,6 +1,6 @@
 # PE31625G24DIRA 风扇调速与光发射控制技术交接
 
-> 更新时间：2026-08-17。当前权威实现是 `webui/app.py`；旧的单独诊断脚本只用于对照，不应覆盖运行配置。大小散热外观目前使用同一风扇控制方案，差异化需等待大散热实板验证。
+> 更新时间：2026-08-31。当前权威实现是 `webui/app.py`、`webui/optics.py` 与 `webui/sensors.tp`；旧的单独诊断脚本只用于对照，不应覆盖运行配置。大小散热外观目前使用同一风扇控制方案，差异化需等待大散热实板验证。
 
 本文面向继续维护 Silicom PE31625G24DIRA Switch Stack 的开发者，集中说明两个容易误操作的硬件功能：
 
@@ -15,14 +15,14 @@
 
 | 优先级 | 资料 | 重点 |
 | --- | --- | --- |
-| 1 | [`资料/PE31625G24DiRA-MPS_UG1V0.pdf`](资料/PE31625G24DiRA-MPS_UG1V0.pdf) | 第 11 页的风扇口定义；第 21 页 I²C 拓扑；第 23–24 页间接访问与 mux；第 26–27 页器件地址和 TACH 映射 |
+| 1 | 内部资料 `PE31625G24DiRA-MPS_UG1V0.pdf`（不随仓库分发） | 第 11 页的风扇口定义；第 21 页 I²C 拓扑；第 23–24 页间接访问与 mux；第 26–27 页器件地址和 TACH 映射 |
 | 2 | [TI LM96163 数据手册](https://www.ti.com/lit/ds/symlink/lm96163.pdf) | 远端温度、12 点 LUT、PWM、TACH、回差、响应时间和寄存器初始化顺序 |
 | 3 | [`switch_service/pe31625g24dira-fan-init.tp`](switch_service/pe31625g24dira-fan-init.tp) | 当前默认风扇初始化脚本，可直接对照实际写寄存器顺序 |
 | 4 | [`webui/app.py`](webui/app.py) | `render_fan_init()`、`fan_lut_points()`、`port_admin_plan()`、`xcvr_verification_script()` 是当前实现的权威来源 |
 | 5 | [`webui/reference_original_6x100.cfg`](webui/reference_original_6x100.cfg) | 内置 `sil001-hw4-b0` platform 母版；逻辑端口与 `hwResourceId` 映射 |
-| 6 | [`_analysis/sdk/IES_SDK-4.3.2-20160607_6ports_15032017_14i_LINK_OPT_EEE_VRM/ies/src/platforms/libertyTrail/platform.c`](_analysis/sdk/IES_SDK-4.3.2-20160607_6ports_15032017_14i_LINK_OPT_EEE_VRM/ies/src/platforms/libertyTrail/platform.c) | 原厂 `fmFCIByteWrite()` 的写入/回读/重试，以及私有 `Tx Squelch Disable` 初始化 |
-| 7 | [`_analysis/sdk/IES_SDK-4.3.2-20160607_6ports_15032017_14i_LINK_OPT_EEE_VRM/ies/src/platforms/libertyTrail/platform_app_api.c`](_analysis/sdk/IES_SDK-4.3.2-20160607_6ports_15032017_14i_LINK_OPT_EEE_VRM/ies/src/platforms/libertyTrail/platform_app_api.c) | `fmPlatformXcvrMemRead/Write()` 如何选择光引擎并访问 `0x50` |
-| 8 | [`backups/20260809-postinstall/optical-eeprom-and-state.txt`](backups/20260809-postinstall/optical-eeprom-and-state.txt) | 两块板载 FCI 光引擎的原始 EEPROM 和初始状态留档 |
+| 6 | 内部 SDK 取证：`libertyTrail/platform.c`（不随仓库分发） | 原厂 `fmFCIByteWrite()` 的写入/回读/重试，以及私有 `Tx Squelch Disable` 初始化 |
+| 7 | 内部 SDK 取证：`libertyTrail/platform_app_api.c`（不随仓库分发） | `fmPlatformXcvrMemRead/Write()` 如何选择光引擎并访问 `0x50` |
+| 8 | 内部实板取证：`optical-eeprom-and-state.txt`（不随仓库分发） | 两块板载 FCI 光引擎的原始 EEPROM 和初始状态留档 |
 
 板卡手册把 FM10840 称为 Red Rock Canyon（RRC），把两块板载光引擎称为 FCI OBT。代码和本文沿用 FM10840、MPO1/MPO2 和 FCI 光引擎这些更清晰的称呼。
 

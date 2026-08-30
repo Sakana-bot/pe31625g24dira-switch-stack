@@ -290,6 +290,46 @@ class Handler(BaseHTTPRequestHandler):
                     },
                 },
             }
+            sampled = int(time.time())
+            payload["switch_sensors"]["sampled"] = sampled
+            payload["switch_sensors"]["optics"] = {
+                "state": "ready",
+                "sampled": sampled,
+                "modules": [
+                    {
+                        "mpo": 1,
+                        "temperature_c": 49.75,
+                        "temperature_raw": 12736,
+                        "temperature_status": 0,
+                    },
+                    {
+                        "mpo": 2,
+                        "temperature_c": 47.25,
+                        "temperature_raw": 12096,
+                        "temperature_status": 0,
+                    },
+                ],
+            }
+            payload["optics_diagnostic"] = {
+                "state": "ready",
+                "sampled": sampled,
+                "modules": [
+                    {
+                        "mpo": mpo,
+                        "mux": mpo,
+                        "state": "unavailable",
+                        "channels": [],
+                        "identity": {
+                            "readable": True,
+                            "vendor": "FCI / Amphenol",
+                            "part_number": "10124588-211",
+                            "serial": f"A1OM1652-00{104 if mpo == 1 else 112}",
+                            "date_code": "20161220",
+                        },
+                    }
+                    for mpo in (1, 2)
+                ],
+            }
             return self.send_bytes(
                 json.dumps(payload, ensure_ascii=False).encode("utf-8"),
                 "application/json; charset=utf-8",

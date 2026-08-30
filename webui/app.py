@@ -37,6 +37,11 @@ try:
     from runtime_state import RuntimeState
 except ModuleNotFoundError:  # direct import used by the local test harness
     from webui.runtime_state import RuntimeState
+try:
+    from optics import optics_diagnostic_script
+except ModuleNotFoundError:  # direct import used by the local test harness
+    from webui.optics import optics_diagnostic_script
+
 
 def application_version():
     """Read the single project version in source and installed layouts."""
@@ -2838,15 +2843,6 @@ def store_sensor_error(state, exc):
         }
 
 
-def sensor_refresh_worker(state):
-    try:
-        refresh_sensor_cache(state)
-    except Exception as exc:
-        store_sensor_error(state, exc)
-    finally:
-        state.operation_lock.release()
-
-
 def sensor_refresh_job_worker(state, job_id):
     try:
         state.update_job(job_id, state="running", message="刷新板卡传感器")
@@ -2855,20 +2851,19 @@ def sensor_refresh_job_worker(state, job_id):
     except Exception as exc:
         store_sensor_error(state, exc)
         state.update_job(job_id, state="failed", message="板卡传感器刷新失败", error=str(exc))
-    finally:
-        state.operation_lock.release()
 
 
 def maybe_refresh_sensors(state, max_age=30):
     with state.telemetry_lock:
         sampled = state.sensor_cache.get("sampled")
         current_state = state.sensor_cache.get("state")
-    if (
-        current_state == "pending" or not sampled or time.time() - sampled > max_age
-    ) and state.operation_lock.acquire(False):
-        thread = threading.Thread(target=sensor_refresh_worker, args=(state,))
-        thread.daemon = True
-        thread.start()
+    if current_state == "pending" or not sampled or time.time() - sampled > max_age:
+        state.start_operation(
+            "sensor-refresh",
+            sensor_refresh_job_worker,
+            priority=20,
+            coalesce_key="sensor-refresh",
+        )
 
 
 def backup_targets():
@@ -3525,8 +3520,6 @@ def factory_reset_worker(state, job_id):
             error=str(exc),
             backup=backup,
         )
-    finally:
-        state.operation_lock.release()
 
 
 def wait_for_switch(started_at, timeout=120):
@@ -3670,8 +3663,6 @@ def apply_worker(state, job_id, requested, total, warning):
             rollback_error=rollback_error,
             backup=backup,
         )
-    finally:
-        state.operation_lock.release()
 
 
 def configuration_import_worker(state, job_id, value):
@@ -3726,8 +3717,6 @@ def configuration_import_worker(state, job_id, value):
             rollback_error=rollback_error,
             backup=backup,
         )
-    finally:
-        state.operation_lock.release()
 
 
 def live_status_worker(state, job_id):
@@ -3768,8 +3757,6 @@ def live_status_worker(state, job_id):
         )
     except Exception as exc:
         state.update_job(job_id, state="failed", message="端口状态读取失败", error=str(exc))
-    finally:
-        state.operation_lock.release()
 
 
 def meaningful_sdk_errors(output):
@@ -4142,25 +4129,33 @@ def mac_repair_watchdog(state, poll_seconds=1, settle_seconds=3, startup_delay=1
                 audit_after = now + settle_seconds
             previous = current
             if audit_after is not None and now >= audit_after:
-                if not state.operation_lock.acquire(False):
-                    time.sleep(poll_seconds)
-                    continue
-                try:
-                    repaired = repair_mismatched_dynamic_macs(state.config)
-                    if repaired:
-                        summary = ", ".join(
-                            f'{item["mac"]}/FID {item["fid"]} '
-                            f'{item["dmac_port"]}->{item["cache_port"]}'
-                            for item in repaired
-                        )
-                        print(f"MAC repair: relearned {summary}", flush=True)
-                finally:
-                    state.operation_lock.release()
+                state.start_operation(
+                    "mac-repair",
+                    mac_repair_worker,
+                    priority=15,
+                    coalesce_key="mac-repair",
+                )
                 audit_after = None
         except Exception as exc:
             print(f"MAC repair audit skipped: {exc}", flush=True)
             audit_after = time.monotonic() + 5
         time.sleep(poll_seconds)
+
+
+def mac_repair_worker(state, job_id):
+    try:
+        state.update_job(job_id, state="running", message="核对动态 MAC 表")
+        repaired = repair_mismatched_dynamic_macs(state.config)
+        if repaired:
+            summary = ", ".join(
+                f'{item["mac"]}/FID {item["fid"]} '
+                f'{item["dmac_port"]}->{item["cache_port"]}'
+                for item in repaired
+            )
+            print(f"MAC repair: relearned {summary}", flush=True)
+        state.update_job(job_id, state="done", message="动态 MAC 表核对完成")
+    except Exception as exc:
+        state.update_job(job_id, state="failed", message="动态 MAC 表核对失败", error=str(exc))
 
 
 def parse_fdb(output):
@@ -4197,8 +4192,6 @@ def fdb_worker(state, job_id):
         )
     except Exception as exc:
         state.update_job(job_id, state="failed", message="MAC 地址表读取失败", error=str(exc))
-    finally:
-        state.operation_lock.release()
 
 
 def parse_lane_diagnostic(output, endpoint):
@@ -4272,60 +4265,6 @@ def lane_diagnostic_worker(state, job_id, logical):
         )
     except Exception as exc:
         state.update_job(job_id, state="failed", message="Lane 诊断失败", error=str(exc))
-    finally:
-        state.operation_lock.release()
-
-
-def optics_diagnostic_script():
-    lines = [
-        "# expert",
-        "my $pe_chip = $self->{FT}->{CHIP};",
-        "my $pe_mux_saved = [(0) x 1];",
-        "my $pe_mux_read_status = $pe_chip->fmI2cWriteRead(0, 0x58, $pe_mux_saved, 0, 1);",
-        "for my $pe_item ([1, 0x01], [2, 0x02]) {",
-        "    my ($pe_mpo, $pe_mux) = @$pe_item;",
-        "    my $pe_mux_data = [$pe_mux];",
-        "    my $pe_select_status = $pe_chip->fmI2cWriteRead(0, 0x58, $pe_mux_data, 1, 0);",
-        "    my $pe_temperature_data = [0x16, 0x00];",
-        "    my $pe_temperature_status = $pe_chip->fmI2cWriteRead(0, 0x50, $pe_temperature_data, 1, 2);",
-        '    printf("PE31625G24DIRA_OPTICS_TEMPERATURE mpo=%d status=%d raw=%02X%02X\\n", $pe_mpo, $pe_temperature_status, $pe_temperature_data->[0], $pe_temperature_data->[1]);',
-        "    my $pe_page = [0x7f];",
-        "    my $pe_page_status = $pe_chip->fmI2cWriteRead(0, 0x40, $pe_page, 1, 1);",
-        "    my $pe_saved_page = $pe_page->[0];",
-        "    my $pe_page_one = [0x7f, 0x01];",
-        "    $pe_page_status = $pe_chip->fmI2cWriteRead(0, 0x40, $pe_page_one, 2, 0) if $pe_page_status == 0;",
-        "    my $pe_data = [0xce, (0) x 24];",
-        "    my $pe_read_status = $pe_page_status == 0 ? $pe_chip->fmI2cWriteRead(0, 0x40, $pe_data, 1, 24) : $pe_page_status;",
-        "    my $pe_restore_page = [0x7f, $pe_saved_page];",
-        "    my $pe_restore_page_status = $pe_chip->fmI2cWriteRead(0, 0x40, $pe_restore_page, 2, 0);",
-        '    printf("PE31625G24DIRA_OPTICS mpo=%d mux=%d select_status=%d page_status=%d read_status=%d restore_page_status=%d raw=", $pe_mpo, $pe_mux, $pe_select_status, $pe_page_status, $pe_read_status, $pe_restore_page_status);',
-        '    printf("%02X", $pe_data->[$_]) for (0 .. 23);',
-        '    print "\\n";',
-        "    my $pe_identity_page = [0x7f];",
-        "    my $pe_identity_page_status = $pe_chip->fmI2cWriteRead(0, 0x50, $pe_identity_page, 1, 1);",
-        "    my $pe_identity_saved_page = $pe_identity_page->[0];",
-        "    my $pe_identity_page_zero = [0x7f, 0x00];",
-        "    $pe_identity_page_status = $pe_chip->fmI2cWriteRead(0, 0x50, $pe_identity_page_zero, 2, 0) if $pe_identity_page_status == 0;",
-        "    select(undef, undef, undef, 0.03);",
-        "    my $pe_identity_hex = '';",
-        "    my $pe_identity_read_status = 0;",
-        "    for (my $pe_offset = 0x80; $pe_offset < 0x100; $pe_offset += 12) {",
-        "        my $pe_count = 0x100 - $pe_offset;",
-        "        $pe_count = 12 if $pe_count > 12;",
-        "        my $pe_identity_data = [$pe_offset, (0) x ($pe_count - 1)];",
-        "        my $pe_chunk_status = $pe_chip->fmI2cWriteRead(0, 0x50, $pe_identity_data, 1, $pe_count);",
-        "        $pe_identity_read_status = $pe_chunk_status if $pe_chunk_status != 0;",
-        "        $pe_identity_hex .= join('', map { sprintf('%02X', $_) } @{$pe_identity_data});",
-        "    }",
-        "    my $pe_identity_restore = [0x7f, $pe_identity_saved_page];",
-        "    my $pe_identity_restore_status = $pe_chip->fmI2cWriteRead(0, 0x50, $pe_identity_restore, 2, 0);",
-        '    printf("PE31625G24DIRA_OPTICS_IDENTITY mpo=%d page_status=%d read_status=%d restore_page_status=%d raw=%s\\n", $pe_mpo, $pe_identity_page_status, $pe_identity_read_status, $pe_identity_restore_status, $pe_identity_hex);',
-        "}",
-        "if ($pe_mux_read_status != 0) { $pe_mux_saved->[0] = 0x01; }",
-        "$pe_chip->fmI2cWriteRead(0, 0x58, $pe_mux_saved, 1, 0);",
-        f'print "{OPTICS_DIAGNOSTIC_COMPLETE_MARKER}\\n";',
-    ]
-    return "\n".join(lines) + "\n"
 
 
 def decode_optics_identity(raw):
@@ -4360,9 +4299,6 @@ def decode_optics_identity(raw):
 
 
 def parse_optics_diagnostic(output):
-    temperatures = {
-        module["mpo"]: module for module in parse_optics_temperatures(output)["modules"]
-    }
     identities = {}
     for match in OPTICS_IDENTITY_RE.finditer(output):
         statuses = [int(match.group(index)) for index in range(2, 5)]
@@ -4410,16 +4346,6 @@ def parse_optics_diagnostic(output):
                 "restore_page": statuses[3],
             },
         }
-        module.update(
-            temperatures.get(
-                module["mpo"],
-                {
-                    "temperature_c": None,
-                    "temperature_raw": None,
-                    "temperature_status": None,
-                },
-            )
-        )
         module["identity"] = identities.get(module["mpo"], {"readable": False})
         modules.append(module)
     if len(modules) != 2:
@@ -4436,33 +4362,44 @@ def refresh_optics_cache(state):
         timeout=30,
     )
     result = parse_optics_diagnostic(output)
-    optics = parse_optics_temperatures(output)
-    optics["sampled"] = result["sampled"]
     with state.telemetry_lock:
         state.optics_cache = {"state": "ready", **result}
-        state.sensor_cache["optics"] = optics
     return result
 
 
-def optics_cache_worker(state, retry_seconds=30):
-    while True:
-        if not state.operation_lock.acquire(False):
-            time.sleep(retry_seconds)
-            continue
-        try:
-            refresh_optics_cache(state)
-            return
-        except Exception as exc:
-            with state.telemetry_lock:
-                state.optics_cache = {
-                    "state": "error",
-                    "sampled": int(time.time()),
-                    "modules": [],
-                    "error": str(exc),
-                }
-        finally:
-            state.operation_lock.release()
-        time.sleep(retry_seconds)
+def schedule_optics_cache(state, delay=0, retry_seconds=30):
+    def enqueue():
+        state.start_operation(
+            "optics-cache",
+            optics_cache_job_worker,
+            retry_seconds,
+            priority=20,
+            coalesce_key="optics-cache",
+        )
+
+    if delay <= 0:
+        enqueue()
+        return
+    timer = threading.Timer(delay, enqueue)
+    timer.daemon = True
+    timer.start()
+
+
+def optics_cache_job_worker(state, job_id, retry_seconds=30):
+    try:
+        state.update_job(job_id, state="running", message="读取光引擎信息")
+        refresh_optics_cache(state)
+        state.update_job(job_id, state="done", message="光引擎信息已缓存")
+    except Exception as exc:
+        with state.telemetry_lock:
+            state.optics_cache = {
+                "state": "error",
+                "sampled": int(time.time()),
+                "modules": [],
+                "error": str(exc),
+            }
+        state.update_job(job_id, state="failed", message="光引擎信息读取失败", error=str(exc))
+        schedule_optics_cache(state, delay=retry_seconds, retry_seconds=retry_seconds)
 
 
 def fan_apply_worker(state, job_id, value):
@@ -4515,8 +4452,6 @@ def fan_apply_worker(state, job_id, value):
             rollback_error=rollback_error,
             backup=backup,
         )
-    finally:
-        state.operation_lock.release()
 
 
 def validate_port_admin(body, parsed):
@@ -4633,8 +4568,6 @@ def port_admin_worker(state, job_id, scope, target, enabled):
             except Exception:
                 pass
         state.update_job(job_id, state="failed", message="端口开关应用失败", error=str(exc))
-    finally:
-        state.operation_lock.release()
 
 
 def vlan_apply_worker(state, job_id, value):
@@ -4711,8 +4644,6 @@ def vlan_apply_worker(state, job_id, value):
             rollback_error=rollback_error,
             backup=backup,
         )
-    finally:
-        state.operation_lock.release()
 
 
 def run_l2_configuration(config, parsed, previous, value):
@@ -4766,8 +4697,6 @@ def l2_apply_worker(state, job_id, value):
             error=str(exc),
             rollback_ok=rollback_ok,
         )
-    finally:
-        state.operation_lock.release()
 
 
 def lldp_refresh_worker(state, job_id):
@@ -4801,8 +4730,6 @@ def lldp_refresh_worker(state, job_id):
         )
     except Exception as exc:
         state.update_job(job_id, state="failed", message="邻居识别失败", error=str(exc))
-    finally:
-        state.operation_lock.release()
 
 
 def loop_block_worker(state, job_id, endpoint_key_value):
@@ -4834,8 +4761,6 @@ def loop_block_worker(state, job_id, endpoint_key_value):
         state.update_job(job_id, state="done", message="疑似环路端口已关闭")
     except Exception as exc:
         state.update_job(job_id, state="failed", message="环路端口隔离失败", error=str(exc))
-    finally:
-        state.operation_lock.release()
 
 
 def loop_protection_watchdog(state, poll_seconds=2):
@@ -4868,7 +4793,13 @@ def loop_protection_watchdog(state, poll_seconds=2):
                 rate = (count - old[1]) / (now - old[0])
                 strikes[key] = strikes.get(key, 0) + 1 if rate >= threshold else 0
                 if strikes[key] >= 3:
-                    if state.start_operation("loop-protection", loop_block_worker, key):
+                    if state.start_operation(
+                        "loop-protection",
+                        loop_block_worker,
+                        key,
+                        priority=10,
+                        coalesce_key=f"loop-protection:{key}",
+                    ):
                         strikes[key] = 0
         except Exception as exc:
             print(f"Loop protection sample skipped: {exc}", flush=True)
@@ -5318,7 +5249,7 @@ def main():
     threading.Thread(target=mac_repair_watchdog, args=(state,), daemon=True).start()
     threading.Thread(target=state.lldp_monitor.run, daemon=True).start()
     threading.Thread(target=loop_protection_watchdog, args=(state,), daemon=True).start()
-    threading.Thread(target=optics_cache_worker, args=(state,), daemon=True).start()
+    schedule_optics_cache(state)
     print(f"PE31625G24DIRA Switch Manager {APP_VERSION} listening on http://{listen}:{port}")
     server.serve_forever()
 

@@ -28,18 +28,15 @@ class SystemManagementTests(unittest.TestCase):
         order = []
 
         def worker(runtime, job_id, name, gate=None):
-            try:
-                runtime.update_job(job_id, state="running", message=name)
-                order.append(name)
-                if name == "first":
-                    first_started.set()
-                if gate:
-                    gate.wait(2)
-                runtime.update_job(job_id, state="done", message=f"{name} done")
-                if name == "second":
-                    second_done.set()
-            finally:
-                runtime.operation_lock.release()
+            runtime.update_job(job_id, state="running", message=name)
+            order.append(name)
+            if name == "first":
+                first_started.set()
+            if gate:
+                gate.wait(2)
+            runtime.update_job(job_id, state="done", message=f"{name} done")
+            if name == "second":
+                second_done.set()
 
         first = state.start_operation("test", worker, "first", release_first)
         self.assertTrue(first_started.wait(1))
@@ -51,6 +48,46 @@ class SystemManagementTests(unittest.TestCase):
         self.assertEqual(order, ["first", "second"])
         self.assertEqual(state.get_job(first["id"])["state"], "done")
         self.assertEqual(state.get_job(second["id"])["state"], "done")
+
+    def test_background_sdk_operations_are_coalesced(self):
+        state = APP.State({})
+        blocker_started = threading.Event()
+        release_blocker = threading.Event()
+
+        def worker(runtime, job_id, gate=None):
+            runtime.update_job(job_id, state="running")
+            blocker_started.set()
+            if gate:
+                gate.wait(2)
+            runtime.update_job(job_id, state="done")
+
+        state.start_operation("blocker", worker, release_blocker)
+        self.assertTrue(blocker_started.wait(1))
+        first = state.start_operation(
+            "sensor-refresh", worker, priority=20, coalesce_key="sensor-refresh"
+        )
+        second = state.start_operation(
+            "sensor-refresh", worker, priority=20, coalesce_key="sensor-refresh"
+        )
+        self.assertEqual(first["id"], second["id"])
+        release_blocker.set()
+
+    def test_failed_sdk_operation_does_not_block_the_queue(self):
+        state = APP.State({})
+        completed = threading.Event()
+
+        def fail(_runtime, _job_id):
+            raise RuntimeError("expected failure")
+
+        def succeed(runtime, job_id):
+            runtime.update_job(job_id, state="done", message="done")
+            completed.set()
+
+        failed = state.start_operation("fail", fail)
+        succeeded = state.start_operation("succeed", succeed)
+        self.assertTrue(completed.wait(2))
+        self.assertEqual(state.get_job(failed["id"])["state"], "failed")
+        self.assertEqual(state.get_job(succeeded["id"])["state"], "done")
 
     def test_upgrade_version_comparison(self):
         with mock.patch.object(APP, "installed_package_version", return_value="0.9.0"):
@@ -486,8 +523,6 @@ Port           : 4                  4                  4
             "restore_page_status=0 raw={}".format(mpo, identity.hex())
             for mpo in (1, 2)
         )
-        records += "\nPE31625G24DIRA_OPTICS_TEMPERATURE mpo=1 status=0 raw=32F6"
-        records += "\nPE31625G24DIRA_OPTICS_TEMPERATURE mpo=2 status=0 raw=2FD7"
         modules = APP.parse_optics_diagnostic(records)["modules"]
         self.assertTrue(
             all(item["state"] == "unavailable" for item in modules)
@@ -496,8 +531,8 @@ Port           : 4                  4                  4
         self.assertEqual(modules[0]["identity"]["part_number"], "10124588-211")
         self.assertEqual(modules[0]["identity"]["serial"], "ESOM1647-00011")
         self.assertEqual(modules[0]["identity"]["date_code"], "20161114")
-        self.assertEqual(modules[0]["temperature_c"], 50.96)
-        self.assertEqual(modules[1]["temperature_c"], 47.84)
+        self.assertNotIn("temperature_c", modules[0])
+        self.assertNotIn("temperature_c", modules[1])
 
     def test_default_fan_curve_renders_complete_hardware_lut(self):
         value = APP.validate_fan_config(APP.default_fan_config())

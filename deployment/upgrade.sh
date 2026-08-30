@@ -1,4 +1,4 @@
 #!/bin/bash
 set -euo pipefail
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-exec bash "$SCRIPT_DIR/upgrade-debian13.sh" "$@"
+exec bash "$SCRIPT_DIR/upgrade-core.sh" "$@"
