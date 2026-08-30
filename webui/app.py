@@ -206,6 +206,10 @@ OPTICS_IDENTITY_RE = re.compile(
     r"^PE31625G24DIRA_OPTICS_IDENTITY mpo=(\d+) page_status=(-?\d+) read_status=(-?\d+) restore_page_status=(-?\d+) raw=([0-9A-Fa-f]{256})$",
     re.MULTILINE,
 )
+OPTICS_TEMPERATURE_RE = re.compile(
+    r"^PE31625G24DIRA_OPTICS_TEMPERATURE mpo=(\d+) status=(-?\d+) raw=([0-9A-Fa-f]{4})$",
+    re.MULTILINE,
+)
 
 
 class ApiError(Exception):
@@ -2674,6 +2678,7 @@ def telemetry_payload(state):
         uptime = None
     with state.telemetry_lock:
         switch_sensors = dict(state.sensor_cache)
+        optics_diagnostic = dict(state.optics_cache)
     try:
         port_status = direct_port_payload(state.config, state)
     except Exception as exc:
@@ -2696,6 +2701,7 @@ def telemetry_payload(state):
         "fans": fan_payload(switch_sensors),
         "management": network_payload(state),
         "switch_sensors": switch_sensors,
+        "optics_diagnostic": optics_diagnostic,
         "port_status": port_status,
     }
 
@@ -2767,30 +2773,93 @@ def optical_dbm(microwatts):
     return round(10.0 * math.log10(microwatts / 1000.0), 2)
 
 
+def parse_optics_temperatures(output):
+    records = {}
+    for match in OPTICS_TEMPERATURE_RE.finditer(output):
+        raw_value = int(match.group(3), 16)
+        signed_value = raw_value - 0x10000 if raw_value & 0x8000 else raw_value
+        temperature_c = signed_value / 256.0
+        status = int(match.group(2))
+        valid = status == 0 and -40.0 <= temperature_c <= 125.0
+        records[int(match.group(1))] = {
+            "mpo": int(match.group(1)),
+            "temperature_c": round(temperature_c, 2) if valid else None,
+            "temperature_raw": raw_value,
+            "temperature_status": status,
+        }
+    modules = [
+        records.get(
+            mpo,
+            {
+                "mpo": mpo,
+                "temperature_c": None,
+                "temperature_raw": None,
+                "temperature_status": None,
+            },
+        )
+        for mpo in (1, 2)
+    ]
+    readable = sum(module["temperature_c"] is not None for module in modules)
+    return {
+        "state": "ready" if readable == 2 else "partial" if readable else "error",
+        "modules": modules,
+    }
+
+
+def parse_hardware_sensors(output):
+    sensors = parse_switch_sensors(output)
+    optics = parse_optics_temperatures(output)
+    optics["sampled"] = sensors["sampled"]
+    sensors["optics"] = optics
+    return sensors
+
+
+def refresh_sensor_cache(state):
+    script = state.config.get("sensor_script", "/etc/pe31625g24dira/webui/sensors.tp")
+    sensors = parse_hardware_sensors(
+        queue_testpoint_script(
+            state.config, script, SENSOR_COMPLETE_MARKER, timeout=20
+        )
+    )
+    with state.telemetry_lock:
+        state.sensor_cache = sensors
+    return sensors
+
+
+def store_sensor_error(state, exc):
+    with state.telemetry_lock:
+        state.sensor_cache = {
+            "state": "error",
+            "sampled": int(time.time()),
+            "temperatures": [],
+            "voltages": [],
+            "optics": {"state": "error", "modules": []},
+            "error": str(exc),
+        }
+
+
 def sensor_refresh_worker(state):
     try:
-        script = state.config.get("sensor_script", "/etc/pe31625g24dira/webui/sensors.tp")
-        sensors = parse_switch_sensors(
-            queue_testpoint_script(
-                state.config, script, SENSOR_COMPLETE_MARKER, timeout=20
-            )
-        )
-        with state.telemetry_lock:
-            state.sensor_cache = sensors
+        refresh_sensor_cache(state)
     except Exception as exc:
-        with state.telemetry_lock:
-            state.sensor_cache = {
-                "state": "error",
-                "sampled": int(time.time()),
-                "temperatures": [],
-                "voltages": [],
-                "error": str(exc),
-            }
+        store_sensor_error(state, exc)
     finally:
         state.operation_lock.release()
 
 
-def maybe_refresh_sensors(state, max_age=300):
+def sensor_refresh_job_worker(state, job_id):
+    try:
+        state.update_job(job_id, state="running", message="刷新板卡传感器")
+        refresh_sensor_cache(state)
+        state.update_job(job_id, state="done", message="板卡传感器已刷新")
+    except Exception as exc:
+        store_sensor_error(state, exc)
+        state.update_job(job_id, state="failed", message="板卡传感器刷新失败", error=str(exc))
+    finally:
+        state.operation_lock.release()
+
+
+def maybe_refresh_sensors(state, max_age=30):
     with state.telemetry_lock:
         sampled = state.sensor_cache.get("sampled")
         current_state = state.sensor_cache.get("state")
@@ -3684,6 +3753,9 @@ def live_status_worker(state, job_id):
         try:
             sensors = parse_switch_sensors(output)
             with state.telemetry_lock:
+                sensors["optics"] = state.sensor_cache.get(
+                    "optics", {"state": "pending", "modules": []}
+                )
                 state.sensor_cache = sensors
         except Exception:
             pass
@@ -4214,6 +4286,9 @@ def optics_diagnostic_script():
         "    my ($pe_mpo, $pe_mux) = @$pe_item;",
         "    my $pe_mux_data = [$pe_mux];",
         "    my $pe_select_status = $pe_chip->fmI2cWriteRead(0, 0x58, $pe_mux_data, 1, 0);",
+        "    my $pe_temperature_data = [0x16, 0x00];",
+        "    my $pe_temperature_status = $pe_chip->fmI2cWriteRead(0, 0x50, $pe_temperature_data, 1, 2);",
+        '    printf("PE31625G24DIRA_OPTICS_TEMPERATURE mpo=%d status=%d raw=%02X%02X\\n", $pe_mpo, $pe_temperature_status, $pe_temperature_data->[0], $pe_temperature_data->[1]);',
         "    my $pe_page = [0x7f];",
         "    my $pe_page_status = $pe_chip->fmI2cWriteRead(0, 0x40, $pe_page, 1, 1);",
         "    my $pe_saved_page = $pe_page->[0];",
@@ -4285,6 +4360,9 @@ def decode_optics_identity(raw):
 
 
 def parse_optics_diagnostic(output):
+    temperatures = {
+        module["mpo"]: module for module in parse_optics_temperatures(output)["modules"]
+    }
     identities = {}
     for match in OPTICS_IDENTITY_RE.finditer(output):
         statuses = [int(match.group(index)) for index in range(2, 5)]
@@ -4332,6 +4410,16 @@ def parse_optics_diagnostic(output):
                 "restore_page": statuses[3],
             },
         }
+        module.update(
+            temperatures.get(
+                module["mpo"],
+                {
+                    "temperature_c": None,
+                    "temperature_raw": None,
+                    "temperature_status": None,
+                },
+            )
+        )
         module["identity"] = identities.get(module["mpo"], {"readable": False})
         modules.append(module)
     if len(modules) != 2:
@@ -4339,29 +4427,42 @@ def parse_optics_diagnostic(output):
     return {"sampled": int(time.time()), "modules": modules}
 
 
-def optics_diagnostic_worker(state, job_id):
-    try:
-        state.update_job(job_id, state="running", message="读取光引擎")
-        output = run_temporary_testpoint(
-            state.config,
-            "optics-diagnostic",
-            optics_diagnostic_script(),
-            OPTICS_DIAGNOSTIC_COMPLETE_MARKER,
-            timeout=30,
-        )
-        result = parse_optics_diagnostic(output)
-        available = sum(module["state"] == "ready" for module in result["modules"])
-        identified = sum(module["identity"].get("readable", False) for module in result["modules"])
-        state.update_job(
-            job_id,
-            state="done",
-            message=f"光引擎：{identified}/2 身份可读，{available}/2 RX 功率可用",
-            optics_diagnostic=result,
-        )
-    except Exception as exc:
-        state.update_job(job_id, state="failed", message="光引擎读取失败", error=str(exc))
-    finally:
-        state.operation_lock.release()
+def refresh_optics_cache(state):
+    output = run_temporary_testpoint(
+        state.config,
+        "optics-diagnostic",
+        optics_diagnostic_script(),
+        OPTICS_DIAGNOSTIC_COMPLETE_MARKER,
+        timeout=30,
+    )
+    result = parse_optics_diagnostic(output)
+    optics = parse_optics_temperatures(output)
+    optics["sampled"] = result["sampled"]
+    with state.telemetry_lock:
+        state.optics_cache = {"state": "ready", **result}
+        state.sensor_cache["optics"] = optics
+    return result
+
+
+def optics_cache_worker(state, retry_seconds=30):
+    while True:
+        if not state.operation_lock.acquire(False):
+            time.sleep(retry_seconds)
+            continue
+        try:
+            refresh_optics_cache(state)
+            return
+        except Exception as exc:
+            with state.telemetry_lock:
+                state.optics_cache = {
+                    "state": "error",
+                    "sampled": int(time.time()),
+                    "modules": [],
+                    "error": str(exc),
+                }
+        finally:
+            state.operation_lock.release()
+        time.sleep(retry_seconds)
 
 
 def fan_apply_worker(state, job_id, value):
@@ -4910,7 +5011,7 @@ class Handler(BaseHTTPRequestHandler):
     def start_operation(self, kind, target, *args):
         job = self.app_state.start_operation(kind, target, *args)
         if job is None:
-            raise ApiError(409, "另一项 SDK 操作正在运行")
+            raise ApiError(429, "SDK 操作队列已满，请稍后重试")
         return self.json_response(202, job)
 
     def do_GET(self):
@@ -5053,7 +5154,7 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/system/settings":
                 return self.json_response(200, apply_system_settings(self.body_json()))
             if path == "/api/system/upgrade/upload":
-                if self.app_state.operation_lock.locked():
+                if self.app_state.operation_busy():
                     raise ApiError(409, "硬件配置或 SDK 读取正在进行")
                 value = stage_upgrade_archive(
                     self.body_bytes(UPGRADE_MAX_BYTES),
@@ -5062,7 +5163,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.json_response(201, value)
             if path == "/api/system/upgrade/latest":
                 body = self.body_json()
-                if self.app_state.operation_lock.locked():
+                if self.app_state.operation_busy():
                     raise ApiError(409, "硬件配置或 SDK 读取正在进行")
                 return self.json_response(201, stage_latest_upgrade(
                     bool(body.get("include_prerelease")), bool(body.get("allow_downgrade"))
@@ -5074,7 +5175,7 @@ class Handler(BaseHTTPRequestHandler):
                 body = self.body_json()
                 if not isinstance(body, dict) or body.get("confirm") is not True:
                     raise ApiError(400, "请确认执行更新")
-                if self.app_state.operation_lock.locked():
+                if self.app_state.operation_busy():
                     raise ApiError(409, "硬件配置或 SDK 读取正在进行")
                 allow_downgrade = bool(body.get("allow_downgrade"))
                 audit_pending_upgrade(allow_downgrade)
@@ -5088,14 +5189,14 @@ class Handler(BaseHTTPRequestHandler):
                 )
             if path == "/api/system/poweroff":
                 validate_poweroff_request(self.body_json())
-                if self.app_state.operation_lock.locked():
+                if self.app_state.operation_busy():
                     raise ApiError(409, "硬件配置或 SDK 读取正在进行，请完成后再关机")
                 self.json_response(202, {"ok": True, "message": "系统将在 2 秒后开始安全关机"})
                 schedule_poweroff()
                 return
             if path == "/api/system/reboot":
                 validate_poweroff_request(self.body_json())
-                if self.app_state.operation_lock.locked():
+                if self.app_state.operation_busy():
                     raise ApiError(409, "硬件配置或 SDK 读取正在进行，请完成后再重启")
                 self.json_response(202, {"ok": True, "message": "系统将在 2 秒后重启"})
                 schedule_reboot()
@@ -5117,6 +5218,9 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/refresh":
                 self.body_json()
                 return self.start_operation("status", live_status_worker)
+            if path == "/api/sensors/refresh":
+                self.body_json()
+                return self.start_operation("sensors", sensor_refresh_job_worker)
             if path == "/api/vlans/apply":
                 _, parsed = parse_platform(self.app_state.config["platform_persistent"])
                 value = validate_vlan_config(self.body_json(), parsed)
@@ -5150,9 +5254,6 @@ class Handler(BaseHTTPRequestHandler):
                 return self.start_operation(
                     "lane-diagnostic", lane_diagnostic_worker, logical
                 )
-            if path == "/api/optics/diagnostics":
-                self.body_json()
-                return self.start_operation("optics-diagnostic", optics_diagnostic_worker)
             raise ApiError(404, "Not found")
         except ApiError as exc:
             self.json_response(exc.status, {"error": exc.message})
@@ -5217,6 +5318,7 @@ def main():
     threading.Thread(target=mac_repair_watchdog, args=(state,), daemon=True).start()
     threading.Thread(target=state.lldp_monitor.run, daemon=True).start()
     threading.Thread(target=loop_protection_watchdog, args=(state,), daemon=True).start()
+    threading.Thread(target=optics_cache_worker, args=(state,), daemon=True).start()
     print(f"PE31625G24DIRA Switch Manager {APP_VERSION} listening on http://{listen}:{port}")
     server.serve_forever()
 

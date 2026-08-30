@@ -2,4 +2,19 @@
 tp("show sensors switch");
 tp("i2c swr 0x59 A3 1");
 tp("i2c swr 0x59 A4 1");
+# expert
+my $pe_chip = $self->{FT}->{CHIP};
+my $pe_mux_saved = [(0) x 1];
+my $pe_mux_read_status = $pe_chip->fmI2cWriteRead(0, 0x58, $pe_mux_saved, 0, 1);
+for my $pe_item ([1, 0x01], [2, 0x02]) {
+    my ($pe_mpo, $pe_mux) = @$pe_item;
+    my $pe_mux_data = [$pe_mux];
+    my $pe_select_status = $pe_chip->fmI2cWriteRead(0, 0x58, $pe_mux_data, 1, 0);
+    my $pe_temperature_data = [0x16, 0x00];
+    my $pe_temperature_status = $pe_select_status;
+    $pe_temperature_status = $pe_chip->fmI2cWriteRead(0, 0x50, $pe_temperature_data, 1, 2) if $pe_select_status == 0;
+    printf("PE31625G24DIRA_OPTICS_TEMPERATURE mpo=%d status=%d raw=%02X%02X\n", $pe_mpo, $pe_temperature_status, $pe_temperature_data->[0], $pe_temperature_data->[1]);
+}
+if ($pe_mux_read_status != 0) { $pe_mux_saved->[0] = 0x01; }
+$pe_chip->fmI2cWriteRead(0, 0x58, $pe_mux_saved, 1, 0);
 print "PE31625G24DIRA_SWITCH_MANAGER_SENSOR_DONE\n";

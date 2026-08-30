@@ -20,6 +20,38 @@ BASE = Path(HERE, "reference_original_6x100.cfg").read_text(encoding="utf-8")
 
 
 class SystemManagementTests(unittest.TestCase):
+    def test_sdk_operations_wait_in_fifo_order(self):
+        state = APP.State({})
+        first_started = threading.Event()
+        release_first = threading.Event()
+        second_done = threading.Event()
+        order = []
+
+        def worker(runtime, job_id, name, gate=None):
+            try:
+                runtime.update_job(job_id, state="running", message=name)
+                order.append(name)
+                if name == "first":
+                    first_started.set()
+                if gate:
+                    gate.wait(2)
+                runtime.update_job(job_id, state="done", message=f"{name} done")
+                if name == "second":
+                    second_done.set()
+            finally:
+                runtime.operation_lock.release()
+
+        first = state.start_operation("test", worker, "first", release_first)
+        self.assertTrue(first_started.wait(1))
+        second = state.start_operation("test", worker, "second")
+        self.assertEqual(second["state"], "queued")
+        self.assertGreaterEqual(second["queue_ahead"], 1)
+        release_first.set()
+        self.assertTrue(second_done.wait(2))
+        self.assertEqual(order, ["first", "second"])
+        self.assertEqual(state.get_job(first["id"])["state"], "done")
+        self.assertEqual(state.get_job(second["id"])["state"], "done")
+
     def test_upgrade_version_comparison(self):
         with mock.patch.object(APP, "installed_package_version", return_value="0.9.0"):
             self.assertTrue(APP.upgrade_version_state("1.0.0")["update_available"])
@@ -454,6 +486,8 @@ Port           : 4                  4                  4
             "restore_page_status=0 raw={}".format(mpo, identity.hex())
             for mpo in (1, 2)
         )
+        records += "\nPE31625G24DIRA_OPTICS_TEMPERATURE mpo=1 status=0 raw=32F6"
+        records += "\nPE31625G24DIRA_OPTICS_TEMPERATURE mpo=2 status=0 raw=2FD7"
         modules = APP.parse_optics_diagnostic(records)["modules"]
         self.assertTrue(
             all(item["state"] == "unavailable" for item in modules)
@@ -462,6 +496,8 @@ Port           : 4                  4                  4
         self.assertEqual(modules[0]["identity"]["part_number"], "10124588-211")
         self.assertEqual(modules[0]["identity"]["serial"], "ESOM1647-00011")
         self.assertEqual(modules[0]["identity"]["date_code"], "20161114")
+        self.assertEqual(modules[0]["temperature_c"], 50.96)
+        self.assertEqual(modules[1]["temperature_c"], 47.84)
 
     def test_default_fan_curve_renders_complete_hardware_lut(self):
         value = APP.validate_fan_config(APP.default_fan_config())
@@ -613,6 +649,21 @@ Port           : 4                  4                  4
         parsed = APP.parse_switch_sensors(output)
         self.assertEqual(parsed["fans"][0]["rpm"], 0)
         self.assertFalse(parsed["fans"][0]["signal"])
+
+    def test_hardware_sensor_sample_includes_both_optical_engines(self):
+        output = "\n".join(
+            [
+                "MAIN TEMP SENSOR : 35.5 C",
+                "PE31625G24DIRA_OPTICS_TEMPERATURE mpo=1 status=0 raw=32F6",
+                "PE31625G24DIRA_OPTICS_TEMPERATURE mpo=2 status=0 raw=2FD7",
+            ]
+        )
+        parsed = APP.parse_hardware_sensors(output)
+        self.assertEqual(parsed["optics"]["state"], "ready")
+        self.assertEqual(
+            [module["temperature_c"] for module in parsed["optics"]["modules"]],
+            [50.96, 47.84],
+        )
 
     def test_poweroff_requires_explicit_boolean_confirmation(self):
         self.assertTrue(APP.validate_poweroff_request({"confirm": True}))

@@ -84,6 +84,8 @@
                 <div class="temperature-summary">
                   <div><small>FM10840</small><strong id="overview-switch-temp">—</strong></div>
                   <div><small>CPU</small><strong id="overview-cpu-temp">—</strong></div>
+                  <div><small>MPO24-1 光引擎</small><strong id="overview-optics-1-temp">—</strong></div>
+                  <div><small>MPO24-2 光引擎</small><strong id="overview-optics-2-temp">—</strong></div>
                 </div>
               </section>
               <section class="panel switch-traffic-panel">
@@ -140,22 +142,24 @@
           </section>
 
           <section class="panel">
-            <div class="panel-head"><h2>Intel FM10840</h2><div class="panel-tools"><span id="sensor-age" class="link">—</span><button id="refresh-all" class="button secondary compact" type="button">刷新</button></div></div>
-            <div class="hardware-columns">
-              <section class="monitor-group">
-                <h3 class="subhead">芯片温度</h3>
-                <div id="switch-sensors" class="sensor-list"><span class="muted">读取中…</span></div>
-              </section>
-              <section class="monitor-group">
-                <h3 class="subhead">电压</h3>
-                <div id="voltage-sensors" class="sensor-list"></div>
-              </section>
-            </div>
-          </section>
-
-          <section class="panel diagnostic-panel">
-            <div class="panel-head"><h2>光引擎诊断</h2><button id="optics-read" class="button secondary" type="button">读取</button></div>
-            <div id="optics-result" class="diagnostic-empty">尚未读取</div>
+            <div class="panel-head"><h2>板卡传感器</h2><div class="panel-tools"><span id="sensor-age" class="link">—</span><button id="refresh-all" class="button secondary compact" type="button">刷新</button></div></div>
+            <section class="board-sensor-section">
+              <h3 class="board-sensor-title">Intel FM10840</h3>
+              <div class="hardware-columns">
+                <section class="monitor-group">
+                  <h3 class="subhead">芯片温度</h3>
+                  <div id="switch-sensors" class="sensor-list"><span class="muted">读取中…</span></div>
+                </section>
+                <section class="monitor-group">
+                  <h3 class="subhead">电压</h3>
+                  <div id="voltage-sensors" class="sensor-list"></div>
+                </section>
+              </div>
+            </section>
+            <section class="board-sensor-section">
+              <h3 class="board-sensor-title">光引擎</h3>
+              <div id="optics-result" class="diagnostic-empty">等待硬件采样…</div>
+            </section>
           </section>
 
         </section>
