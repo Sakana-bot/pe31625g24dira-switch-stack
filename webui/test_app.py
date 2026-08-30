@@ -568,6 +568,58 @@ Port           : 4                  4                  4
         self.assertNotIn("temperature_c", modules[0])
         self.assertNotIn("temperature_c", modules[1])
 
+    def test_partial_optics_identity_keeps_last_readable_module_and_retries(self):
+        previous = {
+            "state": "ready",
+            "sampled": 1,
+            "modules": [
+                {"mpo": 1, "identity": {"readable": True, "serial": "OLD-1"}},
+                {"mpo": 2, "identity": {"readable": True, "serial": "OLD-2"}},
+            ],
+        }
+        current = {
+            "sampled": 2,
+            "modules": [
+                {"mpo": 1, "identity": {"readable": False}},
+                {"mpo": 2, "identity": {"readable": True, "serial": "NEW-2"}},
+            ],
+        }
+        merged = APP.preserve_optics_identities(current, previous)
+        self.assertEqual(merged["state"], "partial")
+        self.assertEqual(merged["modules"][0]["identity"]["serial"], "OLD-1")
+        self.assertTrue(merged["modules"][0]["identity_stale"])
+        self.assertFalse(merged["modules"][0]["identity_fresh"])
+        self.assertEqual(merged["modules"][1]["identity"]["serial"], "NEW-2")
+        self.assertTrue(merged["modules"][1]["identity_fresh"])
+
+        state = APP.State({})
+        job = state.new_job("optics-cache")
+        with (
+            mock.patch.object(APP, "refresh_optics_cache", return_value=merged),
+            mock.patch.object(APP, "schedule_optics_cache") as schedule,
+        ):
+            APP.optics_cache_job_worker(state, job["id"], retry_seconds=30)
+        self.assertEqual(state.get_job(job["id"])["state"], "done")
+        schedule.assert_called_once_with(state, delay=30, retry_seconds=60)
+
+    def test_optics_cache_error_retains_previous_modules_with_backoff(self):
+        state = APP.State({})
+        state.optics_cache = {
+            "state": "ready",
+            "sampled": 1,
+            "modules": [{"mpo": 1, "identity": {"readable": True}}],
+        }
+        job = state.new_job("optics-cache")
+        with (
+            mock.patch.object(APP, "refresh_optics_cache", side_effect=RuntimeError("I2C")),
+            mock.patch.object(APP, "schedule_optics_cache") as schedule,
+        ):
+            APP.optics_cache_job_worker(state, job["id"], retry_seconds=300)
+        self.assertEqual(state.optics_cache["state"], "partial")
+        self.assertEqual(len(state.optics_cache["modules"]), 1)
+        self.assertEqual(state.get_job(job["id"])["state"], "failed")
+        schedule.assert_called_once_with(state, delay=300, retry_seconds=300)
+
     def test_default_fan_curve_renders_complete_hardware_lut(self):
         value = APP.validate_fan_config(APP.default_fan_config())
         entries = APP.fan_lut_points(value)
