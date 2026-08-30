@@ -28,7 +28,7 @@ curl -fsSL https://raw.githubusercontent.com/Sakana-bot/pe31625g24dira-switch-st
 sudo bash deployment/uninstall.sh --yes
 ```
 
-也可下载 Release 中的 deploy-kit、legacy SDK runtime 及各自的 `.sha256`，上传到板卡后执行：
+也可从最新 Release 下载 deploy-kit，并从首次正式发布 `v1.0.0` 下载稳定的 legacy SDK runtime；同时下载各自的 `.sha256` 后上传到板卡执行：
 
 ```bash
 sha256sum -c pe31625g24dira-deploy-kit-*.tar.gz.sha256

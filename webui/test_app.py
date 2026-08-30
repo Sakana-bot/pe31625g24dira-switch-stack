@@ -28,18 +28,15 @@ class SystemManagementTests(unittest.TestCase):
         order = []
 
         def worker(runtime, job_id, name, gate=None):
-            try:
-                runtime.update_job(job_id, state="running", message=name)
-                order.append(name)
-                if name == "first":
-                    first_started.set()
-                if gate:
-                    gate.wait(2)
-                runtime.update_job(job_id, state="done", message=f"{name} done")
-                if name == "second":
-                    second_done.set()
-            finally:
-                runtime.operation_lock.release()
+            runtime.update_job(job_id, state="running", message=name)
+            order.append(name)
+            if name == "first":
+                first_started.set()
+            if gate:
+                gate.wait(2)
+            runtime.update_job(job_id, state="done", message=f"{name} done")
+            if name == "second":
+                second_done.set()
 
         first = state.start_operation("test", worker, "first", release_first)
         self.assertTrue(first_started.wait(1))
@@ -51,6 +48,46 @@ class SystemManagementTests(unittest.TestCase):
         self.assertEqual(order, ["first", "second"])
         self.assertEqual(state.get_job(first["id"])["state"], "done")
         self.assertEqual(state.get_job(second["id"])["state"], "done")
+
+    def test_background_sdk_operations_are_coalesced(self):
+        state = APP.State({})
+        blocker_started = threading.Event()
+        release_blocker = threading.Event()
+
+        def worker(runtime, job_id, gate=None):
+            runtime.update_job(job_id, state="running")
+            blocker_started.set()
+            if gate:
+                gate.wait(2)
+            runtime.update_job(job_id, state="done")
+
+        state.start_operation("blocker", worker, release_blocker)
+        self.assertTrue(blocker_started.wait(1))
+        first = state.start_operation(
+            "sensor-refresh", worker, priority=20, coalesce_key="sensor-refresh"
+        )
+        second = state.start_operation(
+            "sensor-refresh", worker, priority=20, coalesce_key="sensor-refresh"
+        )
+        self.assertEqual(first["id"], second["id"])
+        release_blocker.set()
+
+    def test_failed_sdk_operation_does_not_block_the_queue(self):
+        state = APP.State({})
+        completed = threading.Event()
+
+        def fail(_runtime, _job_id):
+            raise RuntimeError("expected failure")
+
+        def succeed(runtime, job_id):
+            runtime.update_job(job_id, state="done", message="done")
+            completed.set()
+
+        failed = state.start_operation("fail", fail)
+        succeeded = state.start_operation("succeed", succeed)
+        self.assertTrue(completed.wait(2))
+        self.assertEqual(state.get_job(failed["id"])["state"], "failed")
+        self.assertEqual(state.get_job(succeeded["id"])["state"], "done")
 
     def test_upgrade_version_comparison(self):
         with mock.patch.object(APP, "installed_package_version", return_value="0.9.0"):
@@ -78,6 +115,40 @@ class SystemManagementTests(unittest.TestCase):
     def test_system_settings_reject_invalid_hostname_before_writing(self):
         with self.assertRaises(APP.ApiError):
             APP.apply_system_settings({"hostname": "bad hostname"})
+
+    def test_system_settings_reject_invalid_timezone_before_writing(self):
+        with mock.patch.object(APP, "valid_timezone", return_value=False), mock.patch.object(
+            APP.subprocess, "run"
+        ) as run:
+            with self.assertRaises(APP.ApiError):
+                APP.apply_system_settings(
+                    {"hostname": "test-switch", "timezone": "invalid/timezone"}
+                )
+            run.assert_not_called()
+
+    def test_available_timezones_uses_system_iana_database(self):
+        original_root = APP.TIMEZONE_ROOT
+        try:
+            with tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                (root / "Asia").mkdir()
+                (root / "Europe").mkdir()
+                (root / "Asia" / "Shanghai").write_bytes(b"tzif")
+                (root / "Europe" / "London").write_bytes(b"tzif")
+                (root / "UTC").write_bytes(b"tzif")
+                (root / "zone.tab").write_text(
+                    "CN\t+3114+12128\tAsia/Shanghai\nGB\t+513030-0000731\tEurope/London\n",
+                    encoding="utf-8",
+                )
+                APP.TIMEZONE_ROOT = root
+                APP.available_timezones.cache_clear()
+                self.assertEqual(
+                    APP.available_timezones(),
+                    ["Asia/Shanghai", "Europe/London", "UTC"],
+                )
+        finally:
+            APP.TIMEZONE_ROOT = original_root
+            APP.available_timezones.cache_clear()
 
     def test_upgrade_archive_rejects_traversal(self):
         stream = io.BytesIO()
@@ -486,8 +557,6 @@ Port           : 4                  4                  4
             "restore_page_status=0 raw={}".format(mpo, identity.hex())
             for mpo in (1, 2)
         )
-        records += "\nPE31625G24DIRA_OPTICS_TEMPERATURE mpo=1 status=0 raw=32F6"
-        records += "\nPE31625G24DIRA_OPTICS_TEMPERATURE mpo=2 status=0 raw=2FD7"
         modules = APP.parse_optics_diagnostic(records)["modules"]
         self.assertTrue(
             all(item["state"] == "unavailable" for item in modules)
@@ -496,8 +565,8 @@ Port           : 4                  4                  4
         self.assertEqual(modules[0]["identity"]["part_number"], "10124588-211")
         self.assertEqual(modules[0]["identity"]["serial"], "ESOM1647-00011")
         self.assertEqual(modules[0]["identity"]["date_code"], "20161114")
-        self.assertEqual(modules[0]["temperature_c"], 50.96)
-        self.assertEqual(modules[1]["temperature_c"], 47.84)
+        self.assertNotIn("temperature_c", modules[0])
+        self.assertNotIn("temperature_c", modules[1])
 
     def test_default_fan_curve_renders_complete_hardware_lut(self):
         value = APP.validate_fan_config(APP.default_fan_config())
@@ -664,6 +733,50 @@ Port           : 4                  4                  4
             [module["temperature_c"] for module in parsed["optics"]["modules"]],
             [50.96, 47.84],
         )
+
+    def test_failed_optical_temperature_keeps_last_valid_sample(self):
+        current = APP.parse_optics_temperatures(
+            "\n".join(
+                [
+                    "PE31625G24DIRA_OPTICS_TEMPERATURE mpo=1 status=230 raw=1600",
+                    "PE31625G24DIRA_OPTICS_TEMPERATURE mpo=2 status=0 raw=2FD7",
+                ]
+            )
+        )
+        previous = APP.parse_optics_temperatures(
+            "\n".join(
+                [
+                    "PE31625G24DIRA_OPTICS_TEMPERATURE mpo=1 status=0 raw=32F6",
+                    "PE31625G24DIRA_OPTICS_TEMPERATURE mpo=2 status=0 raw=2FC0",
+                ]
+            )
+        )
+        merged = APP.preserve_optics_temperatures(current, previous)
+        self.assertEqual(merged["state"], "ready")
+        self.assertEqual(merged["modules"][0]["temperature_c"], 50.96)
+        self.assertEqual(merged["modules"][1]["temperature_c"], 47.84)
+
+    def test_optical_temperature_failure_is_retried_once(self):
+        first = "\n".join(
+            [
+                "MAIN TEMP SENSOR : 35.5 C",
+                "PE31625G24DIRA_OPTICS_TEMPERATURE mpo=1 status=230 raw=1600",
+                "PE31625G24DIRA_OPTICS_TEMPERATURE mpo=2 status=0 raw=2FD7",
+            ]
+        )
+        retry = "\n".join(
+            [
+                "MAIN TEMP SENSOR : 35.5 C",
+                "PE31625G24DIRA_OPTICS_TEMPERATURE mpo=1 status=0 raw=32F6",
+                "PE31625G24DIRA_OPTICS_TEMPERATURE mpo=2 status=0 raw=2FD7",
+            ]
+        )
+        state = APP.State({"sensor_script": "/tmp/sensors.tp"})
+        with mock.patch.object(APP, "queue_testpoint_script", side_effect=[first, retry]) as read:
+            sensors = APP.refresh_sensor_cache(state)
+        self.assertEqual(read.call_count, 2)
+        self.assertEqual(sensors["optics"]["state"], "ready")
+        self.assertEqual(sensors["optics"]["modules"][0]["temperature_c"], 50.96)
 
     def test_poweroff_requires_explicit_boolean_confirmation(self):
         self.assertTrue(APP.validate_poweroff_request({"confirm": True}))
@@ -886,6 +999,17 @@ class FirstRunHttpTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertIn("application/javascript", headers["Content-Type"])
         self.assertIn(b"enhanceSelects", payload)
+        for module_name, marker in (
+            ("dashboard.js", b"createDashboard"),
+            ("diagnostics.js", b"createDiagnostics"),
+            ("maintenance.js", b"createMaintenance"),
+        ):
+            status, headers, payload = self.request(
+                "GET", "/" + module_name, headers={"Cookie": cookie}
+            )
+            self.assertEqual(status, 200)
+            self.assertIn("application/javascript", headers["Content-Type"])
+            self.assertIn(marker, payload)
         status, headers, payload = self.request(
             "GET", "/backup", headers={"Cookie": cookie}
         )

@@ -103,6 +103,17 @@ class Handler(BaseHTTPRequestHandler):
                 "username": "admin",
                 "system_settings": {
                     "hostname": "pe31625-preview",
+                    "timezone": "Asia/Shanghai",
+                    "timezones": [
+                        "America/Los_Angeles",
+                        "America/New_York",
+                        "Asia/Hong_Kong",
+                        "Asia/Shanghai",
+                        "Asia/Singapore",
+                        "Asia/Tokyo",
+                        "Europe/London",
+                        "UTC",
+                    ],
                 },
             }
             return self.send_bytes(
@@ -290,6 +301,46 @@ class Handler(BaseHTTPRequestHandler):
                     },
                 },
             }
+            sampled = int(time.time())
+            payload["switch_sensors"]["sampled"] = sampled
+            payload["switch_sensors"]["optics"] = {
+                "state": "ready",
+                "sampled": sampled,
+                "modules": [
+                    {
+                        "mpo": 1,
+                        "temperature_c": 49.75,
+                        "temperature_raw": 12736,
+                        "temperature_status": 0,
+                    },
+                    {
+                        "mpo": 2,
+                        "temperature_c": 47.25,
+                        "temperature_raw": 12096,
+                        "temperature_status": 0,
+                    },
+                ],
+            }
+            payload["optics_diagnostic"] = {
+                "state": "ready",
+                "sampled": sampled,
+                "modules": [
+                    {
+                        "mpo": mpo,
+                        "mux": mpo,
+                        "state": "unavailable",
+                        "channels": [],
+                        "identity": {
+                            "readable": True,
+                            "vendor": "FCI / Amphenol",
+                            "part_number": "10124588-211",
+                            "serial": f"A1OM1652-00{104 if mpo == 1 else 112}",
+                            "date_code": "20161220",
+                        },
+                    }
+                    for mpo in (1, 2)
+                ],
+            }
             return self.send_bytes(
                 json.dumps(payload, ensure_ascii=False).encode("utf-8"),
                 "application/json; charset=utf-8",
@@ -316,7 +367,10 @@ class Handler(BaseHTTPRequestHandler):
                 "/app.js": ("app.js", "application/javascript; charset=utf-8"),
                 "/api-client.js": ("api-client.js", "application/javascript; charset=utf-8"),
                 "/controls.js": ("controls.js", "application/javascript; charset=utf-8"),
+                "/dashboard.js": ("dashboard.js", "application/javascript; charset=utf-8"),
+                "/diagnostics.js": ("diagnostics.js", "application/javascript; charset=utf-8"),
                 "/login.js": ("login.js", "application/javascript; charset=utf-8"),
+                "/maintenance.js": ("maintenance.js", "application/javascript; charset=utf-8"),
                 "/setup.js": ("setup.js", "application/javascript; charset=utf-8"),
                 "/theme.js": ("theme.js", "application/javascript; charset=utf-8"),
                 "/style.css": ("style.css", "text/css; charset=utf-8"),
@@ -345,7 +399,11 @@ class Handler(BaseHTTPRequestHandler):
                 "application/json; charset=utf-8",
             )
         if self.path == "/api/system/settings":
-            payload = {"hostname": body.get("hostname", "pe31625-preview")}
+            payload = {
+                "hostname": body.get("hostname", "pe31625-preview"),
+                "timezone": body.get("timezone", "Asia/Shanghai"),
+                "timezones": ["Asia/Shanghai", "Asia/Tokyo", "Europe/London", "UTC"],
+            }
             return self.send_bytes(json.dumps(payload).encode("utf-8"), "application/json; charset=utf-8")
         if self.path in ("/api/logout", "/api/login"):
             return self.send_bytes(b'{"ok":true}', "application/json; charset=utf-8")

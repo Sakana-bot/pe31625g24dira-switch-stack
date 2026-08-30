@@ -2,10 +2,46 @@
 
 import { createApiClient, waitForJob } from '/api-client.js';
 import { closeCustomSelects, destroySelects, enhanceNumberInputs, enhanceSelects, syncSelect } from '/controls.js';
+import { createDashboard } from '/dashboard.js';
+import { createDiagnostics } from '/diagnostics.js';
+import { createMaintenance } from '/maintenance.js';
 
 const TRAFFIC_UNIT_STORAGE_KEY = 'pe31625g24dira-traffic-unit';
 const PRERELEASE_STORAGE_KEY = 'pe31625g24dira-include-prerelease';
-const ui = { state: null, csrf: null, topology: {}, vlans: [], l2: null, l2Saved: null, pendingPortAdmin: null, vlanTaggedPort: null, vlanPreview: null, fan: null, importedConfig: null, upgradeReady: false, upgradeCandidate: null, upgradeIncludePrerelease: window.localStorage.getItem(PRERELEASE_STORAGE_KEY) === 'true', upgradeAllowDowngrade: false, live: {}, telemetry: null, pendingTelemetry: null, opticsRenderKey: null, busy: false, poweringOff: false, rebooting: false, telemetryTimer: null, healthTimer: null, logTimer: null, toastTimer: null, topologyPreview: null, logSource: 'system', logsLoaded: false, logAutoFollow: true, logRequestId: 0, trafficUnit: window.localStorage.getItem(TRAFFIC_UNIT_STORAGE_KEY) === 'bytes' ? 'bytes' : 'bits' };
+const ui = {
+  state: null,
+  csrf: null,
+  topology: {},
+  vlans: [],
+  l2: null,
+  l2Saved: null,
+  pendingPortAdmin: null,
+  vlanTaggedPort: null,
+  vlanPreview: null,
+  fan: null,
+  importedConfig: null,
+  upgradeReady: false,
+  upgradeCandidate: null,
+  upgradeIncludePrerelease: window.localStorage.getItem(PRERELEASE_STORAGE_KEY) === 'true',
+  upgradeAllowDowngrade: false,
+  live: {},
+  telemetry: null,
+  pendingTelemetry: null,
+  opticsRenderKey: null,
+  busy: false,
+  poweringOff: false,
+  rebooting: false,
+  telemetryTimer: null,
+  healthTimer: null,
+  logTimer: null,
+  toastTimer: null,
+  topologyPreview: null,
+  logSource: 'system',
+  logsLoaded: false,
+  logAutoFollow: true,
+  logRequestId: 0,
+  trafficUnit: window.localStorage.getItem(TRAFFIC_UNIT_STORAGE_KEY) === 'bytes' ? 'bytes' : 'bits',
+};
 const $ = (selector) => document.querySelector(selector);
 const speedLabel = (speed) => `${speed / 1000}G`;
 const clone = (value) => JSON.parse(JSON.stringify(value));
@@ -112,240 +148,6 @@ function loadPercent(rate, capacity) {
   if (rate === null || rate === undefined || !capacity) return '—';
   const value = Math.max(0, Number(rate)) / capacity * 100;
   return value > 0 && value < 0.1 ? '<0.1%' : `${value.toFixed(1)}%`;
-}
-
-function sensorBox(name, value, suffix = '°C', digits = 1) {
-  const box = document.createElement('div');
-  const temperature = suffix === '°C' ? Number(value) : null;
-  const tone = temperature !== null && temperature >= 100 ? ' danger' : temperature !== null && temperature >= 85 ? ' warning' : '';
-  box.className = `sensor${tone}`;
-  const label = document.createElement('small'); label.textContent = name;
-  const strong = document.createElement('strong'); strong.textContent = `${Number(value).toFixed(digits)}${suffix}`;
-  box.append(label, strong);
-  return box;
-}
-
-function managementCard(net) {
-  const card = document.createElement('article'); card.className = `management-card${net.carrier ? ' up' : ''}`;
-  const head = document.createElement('div'); head.className = 'management-head';
-  const title = document.createElement('div'); const strong = document.createElement('strong'); strong.textContent = net.interface; title.append(strong);
-  const badge = document.createElement('span'); badge.className = `link ${net.carrier ? 'up' : ''}`; badge.textContent = net.carrier ? 'UP' : 'DOWN'; head.append(title, badge); card.append(head);
-  const details = document.createElement('dl'); details.className = 'management-details';
-  [['IPv4', net.ipv4.join(', ') || '—'], ['MAC', net.mac || '—'], ['网关', net.gateway || '—'], ['链路', net.carrier ? formatEthernetLink(net.speed_mbps, net.duplex) : '—']].forEach(([label, value]) => { const dt = document.createElement('dt'); dt.textContent = label; const dd = document.createElement('dd'); dd.textContent = value; details.append(dt, dd); }); card.append(details);
-  const traffic = document.createElement('div'); traffic.className = 'management-traffic';
-  traffic.innerHTML = `<span>接收 <b>${formatRate(net.rx_bps)}</b><small>${formatBytes(net.statistics.rx_bytes)}</small></span><span>发送 <b>${formatRate(net.tx_bps)}</b><small>${formatBytes(net.statistics.tx_bytes)}</small></span>`; card.append(traffic);
-  return card;
-}
-
-function renderActivePorts(portStatus) {
-  const root = $('#active-port-list'); root.replaceChildren();
-  const ports = portStatus && portStatus.state === 'ready' ? portStatus.ports : {};
-  const portEntries = Object.entries(ports);
-  const active = portEntries.filter(([, item]) => item.oper === 'UP');
-  const activeCount = $('#active-port-count');
-  activeCount.textContent = `${active.length} / ${portEntries.length}`;
-  if (!active.length) {
-    root.append(Object.assign(document.createElement('span'), { className: 'muted', textContent: '无活动端口' }));
-    return;
-  }
-  const endpoints = new Map((ui.state && ui.state.endpoints || []).map((item) => [String(item.logical), item]));
-  active.forEach(([logical, live]) => {
-    const endpoint = endpoints.get(logical);
-    const row = document.createElement('div'); row.className = 'active-port-row';
-    const identity = document.createElement('div'); identity.className = 'active-port-identity';
-    const configured = ui.l2 && ui.l2.endpoints.find((item) => item.logical === Number(logical));
-    const name = document.createElement('strong'); name.textContent = configured && configured.name ? configured.name : `端口 ${logical}`;
-    const location = document.createElement('small'); location.textContent = endpoint ? endpoint.label : `EPL ${live.epl} · Lane ${Number(live.lane)}`;
-    identity.append(name, location);
-    const metrics = document.createElement('div'); metrics.className = 'active-port-metrics';
-    const traffic = document.createElement('span'); traffic.className = 'active-port-traffic'; traffic.textContent = `↓ ${formatRate(live.rx_bps)}  ↑ ${formatRate(live.tx_bps)}`;
-    const speed = document.createElement('strong'); speed.className = 'active-port-speed'; speed.textContent = live.speed || (endpoint ? speedLabel(endpoint.speed) : '—');
-    const speedClass = /^\d+G$/.test(speed.textContent) ? `speed-${speed.textContent.toLowerCase()}` : '';
-    if (speedClass) speed.classList.add(speedClass);
-    metrics.append(traffic, speed);
-    row.append(identity, metrics); root.append(row);
-  });
-}
-
-function statItems(target, entries) {
-  const root = $(target); root.replaceChildren();
-  entries.forEach(([label, value, tone, alertValue]) => { const item = document.createElement('div'); const alert = Number(alertValue === undefined ? value : alertValue) > 0; item.className = `stat-item${tone && alert ? ` ${tone}` : ''}`; const small = document.createElement('small'); small.textContent = label; const strong = document.createElement('strong'); strong.textContent = typeof value === 'string' ? value : formatCount(value); item.append(small, strong); root.append(item); });
-}
-
-function renderPortStatistics() {
-  const select = $('#stats-port'); const live = ui.live[String(select.value)];
-  if (!live || !live.statistics) return;
-  const rx = live.statistics.rx; const tx = live.statistics.tx;
-  $('#stat-rx-unicast').textContent = formatCount(rx.unicast); $('#stat-tx-unicast').textContent = formatCount(tx.unicast);
-  $('#stat-rx-bytes').textContent = formatBytes(rx.good_bytes); $('#stat-tx-bytes').textContent = formatBytes(tx.good_bytes);
-  const rxErrors = rx.framing_errors + rx.fcs_errors;
-  const txDiscards = tx.timeout_drops + tx.error_drops + tx.ecc_drops + tx.loopback_drops + tx.ttl_drops;
-  $('#stat-rx-errors').textContent = formatCount(rxErrors);
-  $('#stat-tx-discards').textContent = formatCount(txDiscards);
-  $('#stat-rx-errors').parentElement.classList.toggle('danger', rxErrors > 0);
-  $('#stat-tx-discards').parentElement.classList.toggle('warning', txDiscards > 0);
-  statItems('#stats-rx', [['速率', formatRate(live.rx_bps)], ['帧', rx.frames], ['单播', rx.unicast], ['组播', rx.multicast], ['广播', rx.broadcast], ['Pause 帧', rx.pause], ['PFC Pause', rx.pfc_pause], ['有效字节', formatBytes(rx.good_bytes)], ['错误字节', formatBytes(rx.bad_bytes), 'danger', rx.bad_bytes]]);
-  statItems('#stats-tx', [['速率', formatRate(live.tx_bps)], ['帧', tx.frames], ['单播', tx.unicast], ['组播', tx.multicast], ['广播', tx.broadcast], ['Pause 帧', tx.pause], ['PFC Pause', tx.pfc_pause], ['有效字节', formatBytes(tx.good_bytes)], ['错误字节', formatBytes(tx.bad_bytes), 'danger', tx.bad_bytes]]);
-  const lengthNames = { lt_64: '<64 B', eq_64: '64 B', '65_127': '65–127 B', '128_255': '128–255 B', '256_511': '256–511 B', '512_1023': '512–1023 B', '1024_1522': '1024–1522 B', '1523_2047': '1523–2047 B', '2048_4095': '2048–4095 B', '4096_8191': '4096–8191 B', '8192_10239': '8192–10239 B', ge_10240: '≥10240 B' };
-  statItems('#stats-rx-length', Object.entries(rx.length).map(([key, value]) => [lengthNames[key] || key, value]));
-  statItems('#stats-tx-length', Object.entries(tx.length).map(([key, value]) => [lengthNames[key] || key, value]));
-  const a = rx.actions; const d = rx.drops; const m = rx.mac;
-  statItems('#stats-errors', [['接收 FCS/CRC 错误', rx.fcs_errors, 'danger'], ['接收帧错误', rx.framing_errors, 'danger'], ['编码错误', m.code_errors, 'danger'], ['超长帧', m.oversize], ['Jabber', m.jabber], ['短帧', m.undersize], ['Runt', m.runt], ['接收 Overrun', m.overrun], ['发送 Underrun', m.underrun], ['发送 FCS 错误', tx.bad_fcs, 'danger'], ['发送错误丢弃', tx.error_drops, 'warning'], ['发送超时丢弃', tx.timeout_drops, 'warning'], ['发送 ECC 丢弃', tx.ecc_drops, 'warning'], ['环回抑制', tx.loopback_drops + d.loopback_suppress], ['STP 丢弃', a.stp], ['VLAN 标签丢弃', a.vlan_tag], ['VLAN 边界丢弃', a.vlan_ingress + a.vlan_egress], ['FFU 丢弃', a.ffu], ['Policer 丢弃', d.policer], ['TTL 丢弃', tx.ttl_drops + d.ttl], ['Trigger 丢弃', a.trigger], ['链路 UP 事件', m.link_events.up], ['本地故障事件', m.link_events.local_fault], ['远端故障事件', m.link_events.remote_fault]]);
-}
-
-function hasTextSelection() {
-  const selection = window.getSelection();
-  return Boolean(selection && !selection.isCollapsed && String(selection).trim());
-}
-
-function renderTelemetry(data) {
-  if (hasTextSelection()) {
-    ui.pendingTelemetry = data;
-    return;
-  }
-  ui.pendingTelemetry = null;
-  ui.telemetry = data;
-  if (data.port_status && data.port_status.state === 'ready') {
-    ui.live = data.port_status.ports;
-    renderPortLinks();
-    renderPortStatistics();
-  }
-  const identity = data.hardware_identity || {};
-  $('#hardware-model').textContent = identity.display_model || identity.model || '未知';
-  $('#hardware-version').textContent = [identity.vpd_version, identity.hardware_family].filter(Boolean).join(' · ') || '未知';
-  $('#hardware-platform').textContent = [identity.platform, identity.hw_version === null || identity.hw_version === undefined ? null : `hw_version ${identity.hw_version}`].filter(Boolean).join(' · ') || '未知';
-  $('#hardware-serial').textContent = identity.serial || '未知';
-  $('#system-device-model').textContent = identity.display_model || identity.model || '未知';
-  $('#system-device-version').textContent = [identity.vpd_version, identity.hardware_family].filter(Boolean).join(' · ') || '未知';
-  $('#system-device-platform').textContent = [identity.platform, identity.hw_version === null || identity.hw_version === undefined ? null : `hw_version ${identity.hw_version}`].filter(Boolean).join(' · ') || '未知';
-  $('#system-device-serial').textContent = identity.serial || '未知';
-  $('#system-device-cpu').textContent = data.cpu.model || '未知';
-  $('#hostname').textContent = data.hostname;
-  $('#cpu-usage').textContent = data.cpu.usage_percent === null ? '采样中' : `${data.cpu.usage_percent}%`;
-  $('#cpu-note').textContent = `${data.cpu.cores} 核`;
-  $('#cpu-model').textContent = data.cpu.model;
-  $('#system-cpu-usage').textContent = data.cpu.usage_percent === null ? '采样中' : `${data.cpu.usage_percent}%`;
-  $('#cpu-load').textContent = data.cpu.load.join(' / ');
-  $('#kernel').textContent = data.kernel;
-  $('#uptime').textContent = formatUptime(data.uptime_seconds);
-  $('#system-info-uptime').textContent = formatUptime(data.uptime_seconds);
-  $('#memory-usage').textContent = `${data.memory.usage_percent}%`;
-  $('#memory-note').textContent = `${formatBytes(data.memory.used)} / ${formatBytes(data.memory.total)}`;
-
-  const temperatureGroups = {
-    'cpu-core': $('#cpu-core-sensors'),
-    soc: $('#soc-sensors'),
-    acpi: $('#acpi-sensors'),
-    board: $('#board-sensors'),
-  };
-  Object.values(temperatureGroups).forEach((root) => root.replaceChildren());
-  Object.entries(temperatureGroups).forEach(([category, root]) => {
-    const items = data.temperatures.filter((item) => item.category === category);
-    if (!items.length && category !== 'board') root.append(Object.assign(document.createElement('span'), { className: 'muted', textContent: '未发现该类传感器' }));
-    items.forEach((item) => root.append(sensorBox(item.display_label || item.label || item.chip, item.celsius, '°C', 1)));
-  });
-  const boardSensors = data.temperatures.filter((item) => item.category === 'board');
-  $('#board-sensor-category').hidden = boardSensors.length === 0;
-  const cpuTemperatures = data.temperatures.filter((item) => item.category === 'cpu-core');
-  const cpuMaximum = cpuTemperatures.length ? Math.max(...cpuTemperatures.map((item) => item.celsius)) : null;
-  $('#overview-cpu-temp').textContent = cpuMaximum === null ? '—' : `${cpuMaximum.toFixed(1)}°C`;
-  $('#overview-cpu-temp').parentElement.classList.toggle('warning', cpuMaximum !== null && cpuMaximum >= 85 && cpuMaximum < 100);
-  $('#overview-cpu-temp').parentElement.classList.toggle('danger', cpuMaximum !== null && cpuMaximum >= 100);
-
-  const net = data.management || { interfaces: [], connected: 0, total: 0 }; const interfaces = net.interfaces || [];
-  $('#mgmt-state').textContent = `${net.connected}/${net.total} UP`;
-  const primary = interfaces.find((item) => item.interface === net.primary) || interfaces.find((item) => item.carrier) || interfaces[0];
-  $('#mgmt-ip').textContent = primary ? (primary.ipv4[0] || primary.interface) : '未发现管理口';
-  const managementGrid = $('#management-grid'); managementGrid.replaceChildren();
-  if (!interfaces.length) managementGrid.append(Object.assign(document.createElement('span'), { className: 'muted', textContent: '未发现板载 I211 管理口' }));
-  interfaces.forEach((item) => managementGrid.append(managementCard(item)));
-
-  const traffic = data.port_status && data.port_status.traffic;
-  if (traffic) {
-    $('#switch-rx-rate').textContent = formatRate(traffic.rx_bps); $('#switch-tx-rate').textContent = formatRate(traffic.tx_bps);
-    $('#switch-rx-total').textContent = `累计 ${formatBytes(traffic.rx_bytes)} · ${formatCount(traffic.rx_frames)} 帧 · ${formatCount(traffic.rx_errors)} 错误`;
-    $('#switch-tx-total').textContent = `累计 ${formatBytes(traffic.tx_bytes)} · ${formatCount(traffic.tx_frames)} 帧 · ${formatCount(traffic.tx_discards)} 丢弃`;
-    $('#switch-traffic-source').textContent = `${traffic.port_count} 个端口`;
-    const forwardingRate = Math.max(Number(traffic.rx_bps) || 0, Number(traffic.tx_bps) || 0);
-    const forwardingCapacity = ((ui.state && ui.state.budget && ui.state.budget.guaranteed) || 600000) * 1000000;
-    $('#switch-load').textContent = loadPercent(forwardingRate, forwardingCapacity);
-    $('#switch-load-note').textContent = `${formatBitRate(forwardingRate)} / 600 Gbit/s`;
-  }
-  renderActivePorts(data.port_status);
-
-  const sdk = data.switch_sensors; const switchGrid = $('#switch-sensors'); switchGrid.replaceChildren(); $('#voltage-sensors').replaceChildren();
-  renderOpticsTelemetry(sdk.optics || { state: sdk.state, sampled: sdk.sampled, modules: [] }, data.optics_diagnostic);
-  if (sdk.state === 'ready') {
-    const switchPoints = sdk.temperatures.filter((item) => item.category === 'switch');
-    const summaryPoints = switchPoints.length ? switchPoints : sdk.temperatures;
-    const maximum = Math.max(...summaryPoints.map((item) => item.celsius));
-    $('#overview-switch-temp').textContent = `${maximum.toFixed(1)}°C`;
-    $('#cooling-switch-temp').textContent = `${maximum.toFixed(1)}°C`;
-    $('#overview-switch-temp').parentElement.classList.toggle('warning', maximum >= 85 && maximum < 100);
-    $('#overview-switch-temp').parentElement.classList.toggle('danger', maximum >= 100);
-    $('#sensor-age').textContent = new Date(sdk.sampled * 1000).toLocaleTimeString();
-    sdk.temperatures.forEach((item) => {
-      const index = item.sensor_index === undefined ? '?' : item.sensor_index;
-      const location = item.documented === false ? `TEMPERATURE[${index}]` : item.location;
-      switchGrid.append(sensorBox(location || item.name.replace(' TEMP SENSOR', ''), item.celsius, '°C', 1));
-    });
-    sdk.voltages.forEach((item) => $('#voltage-sensors').append(sensorBox(item.name.replace('VOLTAGE SENSOR ', ''), item.volts, ' V', 3)));
-  } else {
-    $('#overview-switch-temp').textContent = sdk.state === 'error' ? '读取失败' : '读取中';
-    $('#cooling-switch-temp').textContent = sdk.state === 'error' ? '读取失败' : '读取中';
-    $('#sensor-age').textContent = sdk.state === 'error' ? 'SDK 错误' : '等待 SDK';
-    const message = document.createElement('span'); message.className = 'muted'; message.textContent = sdk.error || '读取中…'; switchGrid.append(message);
-  }
-
-  const fanData = data.fans || { state: 'not-detected', fans: [] };
-  const fan = fanData.fans[0];
-  $('#cooling-fan-rpm').textContent = fan ? `${Math.round(fan.rpm)} RPM` : '未检测到';
-
-}
-
-async function loadTelemetry() {
-  try { renderTelemetry(await api('/api/telemetry')); } catch (error) { console.warn(error); }
-}
-
-function setTelemetryInterval(seconds) {
-  if (ui.telemetryTimer) window.clearInterval(ui.telemetryTimer);
-  ui.telemetryTimer = window.setInterval(loadTelemetry, seconds * 1000);
-}
-
-function updateLinkBadge(badge, logical) {
-  const endpoint = logical === null || !ui.state ? null : ui.state.endpoints.find((item) => item.logical === logical);
-  const live = logical === null ? null : ui.live[String(logical)];
-  badge.className = 'link'; badge.textContent = '未读取'; badge.title = '';
-  if (endpoint && endpoint.enabled === false) {
-    badge.className = 'link off'; badge.textContent = 'OFF'; badge.title = '端口已由用户关闭'; return;
-  }
-  if (!live) return;
-  if (live.oper === 'DOWN' && live.fault === 'local' && !live.rx_link_up) {
-    badge.className = 'link';
-    badge.textContent = 'NO SIGNAL';
-    badge.title = `无有效接收信号 · EPL ${live.epl} · Lane ${Number(live.lane)} · PCS ${live.pcs} · ${live.raw || ''}`;
-    return;
-  }
-  const details = [];
-  if (live.fault === 'local') details.push('LOCAL FAULT');
-  if (live.fault === 'remote') details.push('REMOTE FAULT');
-  if (live.high_ber) details.push('HIGH BER');
-  badge.className = `link ${live.oper === 'UP' && !details.length ? 'up' : 'warn'}`;
-  badge.textContent = [live.oper, ...details].join(' · ');
-  badge.title = `EPL ${live.epl} · Lane ${Number(live.lane)} · RxLinkUp ${live.rx_link_up ? '1' : '0'} · PCS ${live.pcs} · ${live.raw || ''}`;
-}
-
-function linkBadge(logical) {
-  const badge = document.createElement('span');
-  badge.dataset.logical = logical === null ? '' : String(logical);
-  updateLinkBadge(badge, logical);
-  return badge;
-}
-
-function renderPortLinks() {
-  document.querySelectorAll('#page-ports .link[data-logical]').forEach((badge) => {
-    updateLinkBadge(badge, badge.dataset.logical === '' ? null : Number(badge.dataset.logical));
-  });
 }
 
 function makeSelect(values, selected, onChange) {
@@ -871,543 +673,29 @@ async function toggleMpo(mpo) {
   await applyPortAdmin({ mpo, enabled });
 }
 
-function renderFdb(result) {
-  const root = $('#fdb-result'); root.className = 'diagnostic-content'; root.replaceChildren();
-  const meta = document.createElement('p'); meta.className = 'diagnostic-meta'; meta.textContent = `${result.count} 条记录`; root.append(meta);
-  const wrap = document.createElement('div'); wrap.className = 'table-scroll'; const table = document.createElement('table'); table.className = 'diagnostic-table'; const head = document.createElement('thead'); head.innerHTML = '<tr><th>MAC</th><th>FID / VLAN</th><th>类型</th><th>目的地</th><th>模式</th></tr>'; const body = document.createElement('tbody');
-  result.entries.forEach((entry) => { const row = document.createElement('tr'); [entry.mac, entry.fid, entry.destination_type, entry.destination, entry.mode].forEach((value) => { const cell = document.createElement('td'); cell.textContent = value; row.append(cell); }); body.append(row); }); table.append(head, body); wrap.append(table); root.append(wrap);
-}
+const featureContext = {
+  ui, $, api, clone, escapeHtml, speedLabel, showToast,
+  formatBytes, formatRate, formatBitRate, formatEthernetLink,
+  formatCount, formatUptime, loadPercent, syncSelect,
+  pollJob, runOperation, showJob, hideJob,
+};
+const diagnostics = createDiagnostics(featureContext);
+Object.assign(featureContext, diagnostics);
+const dashboard = createDashboard(featureContext);
+Object.assign(featureContext, dashboard);
+const maintenance = createMaintenance(featureContext);
+Object.assign(featureContext, maintenance);
 
-function renderLaneDiagnostic(result) {
-  const root = $('#lane-diagnostic-result'); root.className = 'diagnostic-content'; root.replaceChildren();
-  const meta = document.createElement('p'); meta.className = 'diagnostic-meta'; meta.textContent = `端口 ${result.endpoint.logical} · ${result.port.speed} · ${result.port.state}`; root.append(meta);
-  const grid = document.createElement('div'); grid.className = 'lane-diagnostic-grid'; result.lanes.forEach((lane) => { const card = document.createElement('article'); const title = document.createElement('strong'); title.textContent = `Lane ${lane.lane}`; const dl = document.createElement('dl'); const values = [['信号', lane.signal], ['PLL', lane.pll], ['DFE', `${lane.dfe_mode} · ${lane.coarse}/${lane.fine}`], ['眼高', lane.eye_height === null ? '不可用' : `${lane.eye_height} / 64`]]; if (lane.eye_width !== null) values.push(['眼宽', `${lane.eye_width} / 64`]); values.forEach(([name, value]) => { const dt = document.createElement('dt'); dt.textContent = name; const dd = document.createElement('dd'); dd.textContent = value; dl.append(dt, dd); }); card.append(title, dl); grid.append(card); }); root.append(grid);
-}
-
-function renderOpticsIdentity(section, identity, temperatureC) {
-  const fields = [
-    ['厂商', identity?.vendor],
-    ['型号', identity?.part_number],
-    ['序列号', identity?.serial],
-    ['生产日期', identity?.date_code],
-    ['光引擎内部温度', Number.isFinite(temperatureC) ? `${temperatureC.toFixed(2)} °C` : '—'],
-  ].filter(([, value]) => value);
-  if (!fields.length) return;
-  const list = document.createElement('div');
-  list.className = 'sensor-list optics-identity';
-  fields.forEach(([label, value]) => {
-    const item = document.createElement('div');
-    item.className = 'sensor';
-    const term = document.createElement('small');
-    const detail = document.createElement('strong');
-    term.textContent = label;
-    detail.textContent = value;
-    item.append(term, detail);
-    list.append(item);
-  });
-  section.append(list);
-}
-
-function mergeOpticsTemperatures(result, optics) {
-  const merged = clone(result);
-  const temperatures = new Map((optics?.modules || []).map((module) => [module.mpo, module]));
-  merged.sampled = optics?.sampled || merged.sampled;
-  merged.modules.forEach((module) => {
-    const current = temperatures.get(module.mpo);
-    if (current) {
-      module.temperature_c = current.temperature_c;
-      module.temperature_raw = current.temperature_raw;
-      module.temperature_status = current.temperature_status;
-    }
-  });
-  return merged;
-}
-
-function setOverviewTemperature(selector, value) {
-  const target = $(selector);
-  target.textContent = Number.isFinite(value) ? `${value.toFixed(1)}°C` : '—';
-  target.parentElement.classList.toggle('warning', Number.isFinite(value) && value >= 85 && value < 100);
-  target.parentElement.classList.toggle('danger', Number.isFinite(value) && value >= 100);
-}
-
-function renderOpticsTelemetry(optics, details) {
-  const modules = new Map((optics.modules || []).map((module) => [module.mpo, module]));
-  setOverviewTemperature('#overview-optics-1-temp', modules.get(1)?.temperature_c);
-  setOverviewTemperature('#overview-optics-2-temp', modules.get(2)?.temperature_c);
-  const renderKey = `${optics.sampled || 0}:${details?.sampled || 0}:${details?.state || 'pending'}`;
-  if (renderKey === ui.opticsRenderKey) return;
-  ui.opticsRenderKey = renderKey;
-  if (details?.state === 'ready') renderOptics(mergeOpticsTemperatures(details, optics), true);
-  else renderOptics({ sampled: optics.sampled, modules: optics.modules || [] }, false, details);
-}
-
-function renderOptics(result, detailed = true, details = null) {
-  const root = $('#optics-result');
-  root.className = 'diagnostic-content';
-  root.replaceChildren();
-  if (!result.modules.length) {
-    root.className = 'diagnostic-empty';
-    root.textContent = details?.state === 'error' ? '光引擎诊断读取失败，后台将自动重试' : '等待硬件采样…';
-    return;
-  }
-  const moduleGrid = document.createElement('div');
-  moduleGrid.className = 'optics-module-grid';
-  root.append(moduleGrid);
-  result.modules.forEach((module) => {
-    const section = document.createElement('section');
-    section.className = 'optics-module';
-    const head = document.createElement('div');
-    const title = document.createElement('strong');
-    const badge = document.createElement('span');
-    title.textContent = `MPO24-${module.mpo}`;
-    badge.className = `link ${module.state === 'ready' ? 'up' : 'off'}`;
-    badge.textContent = module.state === 'ready' ? 'RX 功率可读' : 'RX 功率不可用';
-    head.append(title);
-    if (detailed) head.append(badge);
-    section.append(head);
-    renderOpticsIdentity(section, module.identity, module.temperature_c);
-    if (detailed && module.state === 'ready') {
-      const grid = document.createElement('div');
-      grid.className = 'optics-channel-grid';
-      module.channels.forEach((channel) => {
-        const item = document.createElement('span');
-        const label = document.createElement('small');
-        const value = document.createElement('strong');
-        label.textContent = `CH ${channel.channel}`;
-        value.textContent = channel.dbm === null ? '—' : `${channel.dbm.toFixed(2)} dBm`;
-        item.append(label, value);
-        grid.append(item);
-      });
-      section.append(grid);
-    }
-    moduleGrid.append(section);
-  });
-}
-
-async function readDiagnostic(path, fallback, field, renderer, body = {}) {
-  try {
-    const job = await api(path, { method: 'POST', body: JSON.stringify(body) });
-    const current = await pollJob(job, fallback);
-    renderer(current[field]);
-    showToast(current.message, 'success');
-  } catch (error) {
-    showToast(error.message);
-  }
-}
-
-async function readLaneDiagnostic() {
-  const logical = Number($('#stats-port').value);
-  await readDiagnostic('/api/ports/diagnostics', `读取端口 ${logical} Lane`, 'lane_diagnostic', renderLaneDiagnostic, { logical });
-}
-
-async function logout() {
-  try { await api('/api/logout', { method: 'POST', body: '{}' }); } catch (error) { console.warn(error); }
-  window.location.replace('/login');
-}
-
-async function loadLogs(source = ui.logSource, { background = false } = {}) {
-  const requestId = ++ui.logRequestId;
-  const sourceChanged = source !== ui.logSource;
-  ui.logSource = source;
-  const labels = { system: '系统日志', kernel: '内核日志', switch: '交换服务' };
-  document.querySelectorAll('[data-log-source]').forEach((button) => button.classList.toggle('active', button.dataset.logSource === source));
-  $('#log-title').textContent = labels[source];
-  if (!background) {
-    $('#log-meta').textContent = '正在读取…';
-    $('#log-refresh').disabled = true;
-  }
-  try {
-    const value = await api(`/api/logs?source=${encodeURIComponent(source)}`);
-    if (requestId !== ui.logRequestId) return;
-    const content = $('#log-content');
-    const follow = sourceChanged || !ui.logsLoaded || ui.logAutoFollow;
-    const previousScrollTop = content.scrollTop;
-    content.value = value.content || '没有可显示的日志。';
-    window.requestAnimationFrame(() => {
-      content.scrollTop = follow ? content.scrollHeight : previousScrollTop;
-      if (follow) ui.logAutoFollow = true;
-    });
-    $('#log-meta').textContent = new Date(value.sampled * 1000).toLocaleTimeString('zh-CN', { hour12: false });
-    ui.logsLoaded = true;
-  } catch (error) {
-    if (requestId !== ui.logRequestId) return;
-    $('#log-content').value = `读取失败：${error.message}`;
-    $('#log-meta').textContent = '读取失败';
-  } finally {
-    if (requestId === ui.logRequestId) $('#log-refresh').disabled = false;
-  }
-}
-
-function setLogInterval(seconds = 3) {
-  if (ui.logTimer) window.clearInterval(ui.logTimer);
-  ui.logTimer = window.setInterval(() => {
-    const content = $('#log-content');
-    const selecting = document.activeElement === content && content.selectionStart !== content.selectionEnd;
-    if ($('#page-logs').classList.contains('active') && document.visibilityState === 'visible' && !selecting) loadLogs(ui.logSource, { background: true });
-  }, seconds * 1000);
-}
-
-async function saveAccount(event) {
-  event.preventDefault();
-  const form = event.currentTarget;
-  if (!form.checkValidity()) return showToast('请检查账户信息');
-  const button = $('#account-submit');
-  const username = $('#account-username').value.trim();
-  const currentPassword = $('#account-current-password').value;
-  const newPassword = $('#account-new-password').value;
-  const confirmPassword = $('#account-confirm-password').value;
-  if (newPassword !== confirmPassword) return showToast('两次输入的新密码不一致');
-  button.disabled = true;
-  try {
-    const result = await api('/api/account', { method: 'POST', body: JSON.stringify({ username, current_password: currentPassword, new_password: newPassword }) });
-    form.reset();
-    $('#account-username').value = result.username || username;
-    if (result.reauthenticate) {
-      window.location.replace('/login');
-      return;
-    }
-    showToast(result.message || '账户设置已保存', 'success');
-  } catch (error) {
-    showToast(error.message);
-  } finally {
-    button.disabled = false;
-  }
-}
-
-async function saveSystemSettings(event) {
-  event.preventDefault();
-  if (!event.currentTarget.checkValidity()) return showToast('请输入有效的主机名');
-  const button = $('#system-settings-submit'); button.disabled = true;
-  try {
-    const value = await api('/api/system/settings', { method: 'POST', body: JSON.stringify({ hostname: $('#system-hostname').value.trim() }) });
-    $('#system-hostname').value = value.hostname;
-    showToast('系统设置已保存', 'success');
-  } catch (error) {
-    showToast(error.message);
-  } finally {
-    button.disabled = false;
-  }
-}
-
-async function exportConfiguration() {
-  try {
-    const value = await api('/api/config/export');
-    const stamp = String(value.exported_at || '').replace(/[-:]/g, '').replace('T', '-').replace('Z', '') || 'backup';
-    const blob = new Blob([`${JSON.stringify(value, null, 2)}\n`], { type: 'application/json' });
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = `pe31625g24dira-config-${stamp}.json`;
-    document.body.append(link); link.click(); link.remove();
-    URL.revokeObjectURL(link.href);
-    showToast('配置已导出', 'success');
-  } catch (error) {
-    showToast(error.message);
-  }
-}
-
-async function selectConfigurationFile(event) {
-  const file = event.target.files[0];
-  ui.importedConfig = null;
-  $('#config-import').disabled = true;
-  $('#config-import-name').textContent = file ? file.name : '未选择文件';
-  if (!file) return;
-  if (file.size > 262144) {
-    event.target.value = '';
-    return showToast('配置文件过大');
-  }
-  try {
-    const value = JSON.parse(await file.text());
-    if (value.format !== 'pe31625g24dira-switch-config') throw new Error('不是 PE31625G24DIRA 配置备份');
-    ui.importedConfig = value;
-    $('#config-import').disabled = false;
-  } catch (error) {
-    event.target.value = '';
-    $('#config-import-name').textContent = '未选择文件';
-    showToast(error.message || '配置文件无效');
-  }
-}
-
-async function importConfiguration() {
-  if (!ui.importedConfig) return;
-  const value = ui.importedConfig;
-  await runOperation(
-    () => api('/api/config/import', { method: 'POST', body: JSON.stringify(value) }),
-    '恢复配置',
-  );
-  ui.importedConfig = null;
-  $('#config-import-file').value = '';
-  $('#config-import-name').textContent = '未选择文件';
-  $('#config-import').disabled = true;
-}
-
-async function selectUpgradeFile(event) {
-  const file = event.target.files[0];
-  ui.upgradeReady = false;
-  $('#upgrade-apply').disabled = true;
-  $('#upgrade-package').hidden = true;
-  $('#upgrade-result').hidden = true;
-  if (!file) return;
-  if (file.size > 64 * 1024 * 1024 || !/\.tar\.gz$/i.test(file.name)) {
-    event.target.value = '';
-    return showToast('请选择不超过 64 MiB 的 .tar.gz 部署包');
-  }
-  try {
-    const value = await api('/api/system/upgrade/upload', { method: 'POST', headers: { 'Content-Type': 'application/gzip', 'X-PE31625G24DIRA-Filename': encodeURIComponent(file.name) }, body: file });
-    await inspectUpgrade(value);
-  } catch (error) {
-    event.target.value = '';
-    showToast(error.message);
-  }
-}
-
-function renderUpgradePackage(value) {
-  ui.upgradeCandidate = value;
-  $('#upgrade-package').hidden = false;
-  $('#upgrade-file-name').textContent = value.filename || '—';
-  $('#upgrade-version').textContent = `${value.current_version} → ${value.version}`;
-  $('#upgrade-sha256').textContent = value.sha256 || '—';
-}
-
-async function inspectUpgrade(value) {
-  renderUpgradePackage(value);
-  const output = $('#upgrade-result'); output.hidden = false; output.className = 'operation-output';
-  $('#upgrade-apply').textContent = '执行更新';
-  if (value.version_relation === 'current') {
-    output.textContent = '已是最新版本，无需更新。';
-    output.classList.add('upgrade-current');
-    ui.upgradeReady = false; $('#upgrade-apply').disabled = true;
-    return;
-  }
-  if (value.version_relation === 'downgrade' && !ui.upgradeAllowDowngrade) {
-    output.textContent = `检测到较旧版本 ${value.version}。`;
-    output.classList.add('upgrade-available');
-    ui.upgradeReady = true; $('#upgrade-apply').disabled = false;
-    $('#upgrade-apply').textContent = `降级到 ${value.version}`;
-    return;
-  }
-  if (value.version_relation === 'unknown') {
-    output.textContent = '无法比较更新包版本。';
-    ui.upgradeReady = false; $('#upgrade-apply').disabled = true;
-    return;
-  }
-  output.textContent = '正在检查更新内容…';
-  output.classList.add('upgrade-pending');
-  const audit = await api('/api/system/upgrade/audit', { method: 'POST', body: JSON.stringify({ allow_downgrade: ui.upgradeAllowDowngrade }) });
-  renderUpgradePackage(audit);
-  output.className = 'operation-output upgrade-available';
-  output.textContent = audit.version_relation === 'downgrade' ? `可以降级到 ${audit.version}。` : `发现新版本 ${audit.version}，可以执行更新。`;
-  ui.upgradeReady = true; $('#upgrade-apply').disabled = false;
-}
-
-async function selectLatestUpgrade() {
-  const button = $('#upgrade-latest');
-  button.disabled = true;
-  ui.upgradeReady = false;
-  ui.upgradeCandidate = null;
-  $('#upgrade-apply').disabled = true;
-  $('#upgrade-package').hidden = true;
-  const output = $('#upgrade-result');
-  output.hidden = false;
-  output.className = 'operation-output upgrade-pending';
-  output.textContent = ui.upgradeIncludePrerelease ? '正在获取最新版本（包含预发布）…' : '正在获取最新正式版本…';
-  try {
-    const value = await api('/api/system/upgrade/latest', { method: 'POST', body: JSON.stringify({ include_prerelease: ui.upgradeIncludePrerelease, allow_downgrade: ui.upgradeAllowDowngrade }) });
-    await inspectUpgrade(value);
-  } catch (error) {
-    output.textContent = error.message;
-    showToast(error.message);
-  } finally {
-    button.disabled = false;
-  }
-}
-
-async function applyUpgrade() {
-  const button = $('#upgrade-submit'); button.disabled = true;
-  const downgrade = ui.upgradeCandidate?.version_relation === 'downgrade';
-  try {
-    if (downgrade) {
-      ui.upgradeAllowDowngrade = true;
-      $('#upgrade-modal').hidden = true;
-      const output = $('#upgrade-result'); output.hidden = false; output.className = 'operation-output upgrade-pending'; output.textContent = '正在检查降级包…';
-      if (ui.upgradeCandidate.staged === false) {
-        const value = await api('/api/system/upgrade/latest', { method: 'POST', body: JSON.stringify({ include_prerelease: ui.upgradeIncludePrerelease, allow_downgrade: true }) });
-        await inspectUpgrade(value);
-      } else {
-        await inspectUpgrade(ui.upgradeCandidate);
-      }
-      if (!ui.upgradeReady) throw new Error('降级包未通过检查');
-    }
-    const value = await api('/api/system/upgrade/apply', { method: 'POST', body: JSON.stringify({ confirm: true, allow_downgrade: ui.upgradeAllowDowngrade }) });
-    $('#upgrade-modal').hidden = true;
-    $('#upgrade-result').hidden = false;
-    $('#upgrade-result').className = 'operation-output';
-    $('#upgrade-result').textContent = '正在应用更新…';
-    $('#upgrade-apply').disabled = true;
-    await monitorUpgrade(value.unit);
-  } catch (error) {
-    ui.upgradeAllowDowngrade = false;
-    if (downgrade && ui.upgradeCandidate) { ui.upgradeReady = true; $('#upgrade-apply').disabled = false; $('#upgrade-apply').textContent = `降级到 ${ui.upgradeCandidate.version}`; }
-    showToast(error.message); button.disabled = false;
-  }
-}
-
-async function monitorUpgrade(unit) {
-  const output = $('#upgrade-result');
-  const started = Date.now();
-  while (Date.now() - started < 10 * 60 * 1000) {
-    await new Promise((resolve) => window.setTimeout(resolve, 2000));
-    try {
-      const value = await api('/api/system/upgrade/status');
-      if (value.unit !== unit) continue;
-      const elapsed = Math.max(1, Math.round((Date.now() - started) / 1000));
-      output.textContent = value.state === 'running' ? `${value.message} · ${elapsed} 秒` : value.message;
-      if (value.state === 'done') {
-        output.classList.add('upgrade-current');
-        window.setTimeout(() => window.location.replace('/login'), 1500);
-        return;
-      }
-      if (value.state === 'failed') throw new Error(value.message);
-    } catch (error) {
-      if (Date.now() - started < 4 * 60 * 1000 && /fetch|network|Failed/i.test(error.message)) continue;
-      throw error;
-    }
-  }
-  throw new Error('更新等待超时，请重新登录后查看系统日志');
-}
-
-function openPoweroffModal() {
-  if (ui.busy) return showToast('硬件配置或诊断正在进行，请完成后再关机');
-  const modal = $('#poweroff-modal');
-  $('#poweroff-confirm-content').hidden = false; $('#poweroff-progress').hidden = true;
-  $('#poweroff-submit').disabled = false; modal.hidden = false;
-  window.setTimeout(() => $('#poweroff-submit').focus(), 0);
-}
-
-function closePoweroffModal() {
-  if (!ui.poweringOff) $('#poweroff-modal').hidden = true;
-}
-
-function openPowerMenu() {
-  if (!ui.busy && !ui.poweringOff && !ui.rebooting) $('#power-menu-modal').hidden = false;
-}
-
-function closePowerMenu() {
-  $('#power-menu-modal').hidden = true;
-}
-
-function chooseReboot() {
-  closePowerMenu();
-  $('#reboot-submit').disabled = false;
-  $('#reboot-modal').hidden = false;
-}
-
-function choosePoweroff() {
-  closePowerMenu();
-  openPoweroffModal();
-}
-
-async function poweroff() {
-  const submit = $('#poweroff-submit'); submit.disabled = true;
-  try {
-    await api('/api/system/poweroff', { method: 'POST', body: JSON.stringify({ confirm: true }) });
-    ui.poweringOff = true;
-    if (ui.telemetryTimer) window.clearInterval(ui.telemetryTimer);
-    $('#poweroff-confirm-content').hidden = true; $('#poweroff-progress').hidden = false;
-  } catch (error) {
-    submit.disabled = false;
-    showToast(error.message);
-  }
-}
-
-function closeRebootModal() {
-  if (!ui.rebooting) $('#reboot-modal').hidden = true;
-}
-
-async function reboot() {
-  const submit = $('#reboot-submit'); submit.disabled = true;
-  try {
-    await api('/api/system/reboot', { method: 'POST', body: JSON.stringify({ confirm: true }) });
-    ui.rebooting = true;
-    if (ui.telemetryTimer) window.clearInterval(ui.telemetryTimer);
-    if (ui.logTimer) window.clearInterval(ui.logTimer);
-    $('#reboot-modal').hidden = true;
-    showJob('系统正在重启');
-    const started = Date.now();
-    let observedDown = false;
-    await new Promise((resolve) => window.setTimeout(resolve, 4000));
-    while (Date.now() - started < 180000) {
-      showJob(`系统正在重启（${Math.floor((Date.now() - started) / 1000)} 秒）`);
-      try {
-        const response = await fetch('/api/identity', { cache: 'no-store' });
-        if (response.ok && (observedDown || Date.now() - started > 12000)) {
-          hideJob();
-          window.location.replace('/login');
-          return;
-        }
-        if (!response.ok) observedDown = true;
-      } catch (_) {
-        // The management service is expected to be temporarily unreachable.
-        observedDown = true;
-      }
-      await new Promise((resolve) => window.setTimeout(resolve, 2000));
-    }
-    hideJob();
-    showToast('系统尚未恢复，请稍后重新打开管理页面');
-  } catch (error) {
-    submit.disabled = false;
-    hideJob();
-    showToast(error.message);
-  }
-}
-
-function closeFactoryResetModal() { $('#factory-reset-modal').hidden = true; }
-
-async function factoryReset() {
-  const submit = $('#factory-reset-submit'); submit.disabled = true;
-  try {
-    const job = await api('/api/system/factory-reset', { method: 'POST', body: JSON.stringify({ confirm: true }) });
-    closeFactoryResetModal();
-    await pollJob(job, '恢复默认配置');
-    window.setTimeout(() => window.location.assign('/setup'), 3300);
-  } catch (error) {
-    submit.disabled = false;
-    showToast(error.message);
-  }
-}
-
-function renderServiceHealth(health) {
-  const status = health.status || 'error';
-  const dot = $('#service-dot');
-  dot.classList.toggle('up', status === 'healthy');
-  dot.classList.toggle('starting', status === 'initializing');
-  dot.classList.toggle('down', status === 'error');
-  $('#service-text').textContent = status === 'healthy' ? '交换服务' : (status === 'initializing' ? '交换服务 · 启动中' : '交换服务 · 异常');
-  $('#system-service-status').textContent = status === 'healthy' ? '正常' : (status === 'initializing' ? '初始化中' : `异常 · ${health.service || 'unknown'}`);
-  $('#system-service-uio').textContent = health.uio_ready ? '已就绪' : '不可用';
-  $('#system-service-testpoint').textContent = health.testpoint_ready ? '已就绪' : '未就绪';
-}
-
-async function loadServiceHealth() {
-  try { renderServiceHealth(await api('/api/health')); } catch (error) { renderServiceHealth({ status: 'error', service: 'unreachable' }); }
-}
-
-function renderSystemInformation(info) {
-  const components = info.components || {};
-  const storageInfo = info.storage || {};
-  const storage = storageInfo.total ? `${formatBytes(storageInfo.used)} / ${formatBytes(storageInfo.total)} · ${storageInfo.usage_percent}%` : '未知';
-  $('#system-info-hostname').textContent = info.hostname || '未知';
-  $('#system-info-os').textContent = info.os || '未知';
-  $('#system-info-kernel').textContent = info.kernel || '未知';
-  $('#system-device-cpu').textContent = info.cpu_model || '未知';
-  $('#system-device-bios').textContent = info.bios || '未知';
-  $('#system-info-storage').textContent = storage;
-  $('#storage').textContent = storage;
-  $('#component-manager').textContent = components.manager || '未知';
-  $('#component-ies').textContent = components.ies_sdk || '未知';
-  $('#component-testpoint').textContent = components.testpoint || '未知';
-  const driver = components.fm10k_uio || {};
-  $('#component-driver').textContent = driver.version || '未知';
-}
+const {
+  renderPortStatistics, hasTextSelection, renderTelemetry, loadTelemetry, setTelemetryInterval,
+  linkBadge, renderPortLinks, readDiagnostic, readLaneDiagnostic, renderFdb,
+  logout, loadLogs, setLogInterval, saveAccount, saveSystemSettings,
+  exportConfiguration, selectConfigurationFile, importConfiguration,
+  selectUpgradeFile, selectLatestUpgrade, applyUpgrade, openPoweroffModal,
+  closePoweroffModal, openPowerMenu, closePowerMenu, chooseReboot,
+  choosePoweroff, poweroff, closeRebootModal, reboot, closeFactoryResetModal,
+  factoryReset, renderServiceHealth, loadServiceHealth, renderSystemInformation,
+} = featureContext;
 
 async function loadState(resetDraft = true) {
   const state = await api('/api/state'); ui.state = state; ui.csrf = state.csrf;
@@ -1419,7 +707,20 @@ async function loadState(resetDraft = true) {
   renderSystemInformation(state.system_information || {});
   $('#version-text').textContent = `管理软件 ${state.version}`;
   $('#account-username').value = state.username || '';
-  if (state.system_settings) $('#system-hostname').value = state.system_settings.hostname || '';
+  if (state.system_settings) {
+    $('#system-hostname').value = state.system_settings.hostname || '';
+    const timezone = $('#system-timezone');
+    const fragment = document.createDocumentFragment();
+    (state.system_settings.timezones || [state.system_settings.timezone || 'UTC']).forEach((name) => {
+      const option = document.createElement('option');
+      option.value = name;
+      option.textContent = name;
+      fragment.append(option);
+    });
+    timezone.replaceChildren(fragment);
+    timezone.value = state.system_settings.timezone || 'UTC';
+    syncSelect(timezone);
+  }
   renderPorts(); renderStatsPortSelect(); renderVlans(); renderL2(); renderFanCurve();
 }
 

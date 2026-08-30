@@ -24,17 +24,32 @@ try {
     $projectDocuments = @(
         'README.md',
         'install.sh',
-        'VERSIONING.md',
-        'UI_STYLE_GUIDE.md',
-        'FAN_AND_OPTICAL_CONTROL_HANDOFF.md',
-        'HARDWARE_IDENTITY.md'
+        'VERSIONING.md'
     )
     foreach ($name in $projectDocuments) {
         Copy-Item -LiteralPath (Join-Path $projectRoot $name) -Destination $stage
     }
     Copy-Item -LiteralPath (Join-Path $projectRoot 'VERSION') -Destination $stage
 
-    Copy-Item -LiteralPath $deploymentDirectory -Destination (Join-Path $stage 'deployment') -Recurse
+    $deploymentDestination = Join-Path $stage 'deployment'
+    New-Item -ItemType Directory -Path $deploymentDestination -Force | Out-Null
+    $deploymentFiles = @(
+        '99-pe31625g24dira-display.cfg',
+        'configure-maintenance-interface.sh',
+        'deploy-core.sh',
+        'deploy.sh',
+        'deploy-debian13.sh',
+        'generate-fixed-platform.py',
+        'README.md',
+        'runtime-package.sh',
+        'uninstall.sh',
+        'upgrade-core.sh',
+        'upgrade.sh',
+        'upgrade-debian13.sh'
+    )
+    foreach ($name in $deploymentFiles) {
+        Copy-Item -LiteralPath (Join-Path $deploymentDirectory $name) -Destination $deploymentDestination
+    }
 
     $smallB0Destination = Join-Path $stage 'platforms\sil001-hw4-b0'
     New-Item -ItemType Directory -Path $smallB0Destination -Force | Out-Null
@@ -69,6 +84,7 @@ try {
     $webFiles = @(
         'app.py',
         'l2_features.py',
+        'optics.py',
         'runtime_state.py',
         'THIRD_PARTY_NOTICES.md',
         'fan-default.json',
@@ -82,10 +98,35 @@ try {
         Copy-Item -LiteralPath (Join-Path $projectRoot "webui\$name") -Destination $webDestination
     }
     Copy-Item -LiteralPath (Join-Path $projectRoot 'VERSION') -Destination $webDestination
-    Copy-Item -Path (Join-Path $projectRoot 'webui\static\*') -Destination (Join-Path $webDestination 'static') -Recurse
-    $retiredFontDirectory = Join-Path $webDestination 'static\fonts'
-    if (Test-Path -LiteralPath $retiredFontDirectory) {
-        Remove-Item -LiteralPath $retiredFontDirectory -Recurse -Force
+    $staticFiles = @(
+        'api-client.js',
+        'app.js',
+        'controls.js',
+        'dashboard.js',
+        'diagnostics.js',
+        'index.html',
+        'login.html',
+        'login.js',
+        'maintenance.js',
+        'setup.html',
+        'setup.js',
+        'style.css',
+        'theme.js'
+    )
+    foreach ($name in $staticFiles) {
+        Copy-Item -LiteralPath (Join-Path $projectRoot "webui\static\$name") `
+            -Destination (Join-Path $webDestination 'static')
+    }
+
+    $forbiddenStageFiles = Get-ChildItem -LiteralPath $stage -Recurse -Force |
+        Where-Object {
+            $_.Name -eq '__pycache__' -or
+            $_.Extension -in @('.pyc', '.pyo') -or
+            $_.Name -in @('build-kit.ps1', 'build-runtime.ps1', 'build-runtime-from-image.py')
+        }
+    if ($forbiddenStageFiles) {
+        $names = ($forbiddenStageFiles | ForEach-Object FullName) -join ', '
+        throw "Staged deploy-kit contains forbidden build/cache files: $names"
     }
 
     $releaseManifest = [ordered]@{

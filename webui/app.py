@@ -37,6 +37,11 @@ try:
     from runtime_state import RuntimeState
 except ModuleNotFoundError:  # direct import used by the local test harness
     from webui.runtime_state import RuntimeState
+try:
+    from optics import optics_diagnostic_script
+except ModuleNotFoundError:  # direct import used by the local test harness
+    from webui.optics import optics_diagnostic_script
+
 
 def application_version():
     """Read the single project version in source and installed layouts."""
@@ -2814,12 +2819,65 @@ def parse_hardware_sensors(output):
     return sensors
 
 
+def preserve_optics_temperatures(current, *fallbacks):
+    """Keep the newest valid value for each module without exposing stale state."""
+    result = dict(current or {})
+    modules = {
+        int(module["mpo"]): dict(module)
+        for module in result.get("modules", [])
+    }
+    for fallback in fallbacks:
+        for module in (fallback or {}).get("modules", []):
+            mpo = int(module["mpo"])
+            existing = modules.get(mpo)
+            if (
+                (not existing or existing.get("temperature_c") is None)
+                and module.get("temperature_c") is not None
+            ):
+                modules[mpo] = dict(module)
+    result["modules"] = [
+        modules.get(
+            mpo,
+            {
+                "mpo": mpo,
+                "temperature_c": None,
+                "temperature_raw": None,
+                "temperature_status": None,
+            },
+        )
+        for mpo in (1, 2)
+    ]
+    readable = sum(module.get("temperature_c") is not None for module in result["modules"])
+    result["state"] = "ready" if readable == 2 else "partial" if readable else "error"
+    return result
+
+
 def refresh_sensor_cache(state):
     script = state.config.get("sensor_script", "/etc/pe31625g24dira/webui/sensors.tp")
-    sensors = parse_hardware_sensors(
-        queue_testpoint_script(
-            state.config, script, SENSOR_COMPLETE_MARKER, timeout=20
+    with state.telemetry_lock:
+        previous_optics = state.sensor_cache.get("optics", {})
+
+    def read_sensors():
+        return parse_hardware_sensors(
+            queue_testpoint_script(
+                state.config, script, SENSOR_COMPLETE_MARKER, timeout=20
+            )
         )
+
+    sensors = read_sensors()
+    first_optics = sensors["optics"]
+    if any(module.get("temperature_c") is None for module in first_optics["modules"]):
+        try:
+            retry = read_sensors()
+        except Exception:
+            sensors["optics"] = preserve_optics_temperatures(
+                first_optics, previous_optics
+            )
+        else:
+            retry["optics"] = preserve_optics_temperatures(retry["optics"], first_optics)
+            sensors = retry
+    sensors["optics"] = preserve_optics_temperatures(
+        sensors["optics"], previous_optics
     )
     with state.telemetry_lock:
         state.sensor_cache = sensors
@@ -2838,15 +2896,6 @@ def store_sensor_error(state, exc):
         }
 
 
-def sensor_refresh_worker(state):
-    try:
-        refresh_sensor_cache(state)
-    except Exception as exc:
-        store_sensor_error(state, exc)
-    finally:
-        state.operation_lock.release()
-
-
 def sensor_refresh_job_worker(state, job_id):
     try:
         state.update_job(job_id, state="running", message="刷新板卡传感器")
@@ -2855,20 +2904,19 @@ def sensor_refresh_job_worker(state, job_id):
     except Exception as exc:
         store_sensor_error(state, exc)
         state.update_job(job_id, state="failed", message="板卡传感器刷新失败", error=str(exc))
-    finally:
-        state.operation_lock.release()
 
 
 def maybe_refresh_sensors(state, max_age=30):
     with state.telemetry_lock:
         sampled = state.sensor_cache.get("sampled")
         current_state = state.sensor_cache.get("state")
-    if (
-        current_state == "pending" or not sampled or time.time() - sampled > max_age
-    ) and state.operation_lock.acquire(False):
-        thread = threading.Thread(target=sensor_refresh_worker, args=(state,))
-        thread.daemon = True
-        thread.start()
+    if current_state == "pending" or not sampled or time.time() - sampled > max_age:
+        state.start_operation(
+            "sensor-refresh",
+            sensor_refresh_job_worker,
+            priority=20,
+            coalesce_key="sensor-refresh",
+        )
 
 
 def backup_targets():
@@ -3059,8 +3107,79 @@ def system_log_payload(source):
     }
 
 
+TIMEZONE_ROOT = Path("/usr/share/zoneinfo")
+
+
+def current_timezone():
+    try:
+        target = Path("/etc/localtime").resolve()
+        return target.relative_to(TIMEZONE_ROOT.resolve()).as_posix()
+    except (OSError, ValueError):
+        pass
+    try:
+        value = Path("/etc/timezone").read_text(encoding="utf-8").strip()
+        if value:
+            return value
+    except OSError:
+        pass
+    return "UTC"
+
+
+def valid_timezone(value):
+    if not value or len(value) > 128:
+        return False
+    relative = PurePosixPath(value)
+    if relative.is_absolute() or any(part in {"", ".", ".."} for part in relative.parts):
+        return False
+    try:
+        target = (TIMEZONE_ROOT / Path(*relative.parts)).resolve()
+        target.relative_to(TIMEZONE_ROOT.resolve())
+        return target.is_file()
+    except (OSError, ValueError):
+        return False
+
+
+def set_system_timezone(value):
+    target = (TIMEZONE_ROOT / Path(*PurePosixPath(value).parts)).resolve()
+    temporary = Path("/etc") / f".pe31625g24dira-localtime-{os.getpid()}"
+    with suppress(OSError):
+        temporary.unlink()
+    try:
+        os.symlink(target, temporary)
+        os.replace(temporary, "/etc/localtime")
+        atomic_write("/etc/timezone", f"{value}\n", 0o644)
+    except Exception:
+        with suppress(OSError):
+            temporary.unlink()
+        raise
+
+
+@functools.lru_cache(maxsize=1)
+def available_timezones():
+    zones = {"UTC"}
+    for table_name in ("zone.tab", "zone1970.tab"):
+        try:
+            lines = (TIMEZONE_ROOT / table_name).read_text(encoding="utf-8").splitlines()
+        except OSError:
+            continue
+        for line in lines:
+            if not line or line.startswith("#"):
+                continue
+            fields = line.split("\t")
+            if len(fields) >= 3 and valid_timezone(fields[2]):
+                zones.add(fields[2])
+    current = current_timezone()
+    if valid_timezone(current):
+        zones.add(current)
+    return sorted(zones, key=lambda item: (item.split("/", 1)[0], item.casefold()))
+
+
 def system_settings_payload():
-    return {"hostname": os.uname().nodename}
+    return {
+        "hostname": os.uname().nodename,
+        "timezone": current_timezone(),
+        "timezones": available_timezones(),
+    }
 
 
 def apply_system_settings(body):
@@ -3069,15 +3188,27 @@ def apply_system_settings(body):
     hostname = str(body.get("hostname", "")).strip()
     if not re.fullmatch(r"[A-Za-z0-9](?:[A-Za-z0-9.-]{0,61}[A-Za-z0-9])?", hostname):
         raise ApiError(400, "主机名格式无效")
-    result = subprocess.run(
-        ["/usr/bin/hostnamectl", "set-hostname", hostname],
-        capture_output=True,
-        text=True,
-        timeout=10,
-        check=False,
-    )
-    if result.returncode:
-        raise ApiError(500, clean_service_log(result.stderr) or "系统设置保存失败")
+    timezone = str(body["timezone"] if "timezone" in body else current_timezone()).strip()
+    if not valid_timezone(timezone):
+        raise ApiError(400, "时区无效，请使用 Asia/Shanghai 等 IANA 时区名称")
+    if timezone != current_timezone():
+        try:
+            set_system_timezone(timezone)
+        except OSError as exc:
+            raise ApiError(500, f"时区设置失败: {exc}") from None
+    commands = []
+    if hostname != os.uname().nodename:
+        commands.append(["/usr/bin/hostnamectl", "set-hostname", hostname])
+    for command in commands:
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+        if result.returncode:
+            raise ApiError(500, clean_service_log(result.stderr) or "系统设置保存失败")
     return system_settings_payload()
 
 
@@ -3525,8 +3656,6 @@ def factory_reset_worker(state, job_id):
             error=str(exc),
             backup=backup,
         )
-    finally:
-        state.operation_lock.release()
 
 
 def wait_for_switch(started_at, timeout=120):
@@ -3670,8 +3799,6 @@ def apply_worker(state, job_id, requested, total, warning):
             rollback_error=rollback_error,
             backup=backup,
         )
-    finally:
-        state.operation_lock.release()
 
 
 def configuration_import_worker(state, job_id, value):
@@ -3726,8 +3853,6 @@ def configuration_import_worker(state, job_id, value):
             rollback_error=rollback_error,
             backup=backup,
         )
-    finally:
-        state.operation_lock.release()
 
 
 def live_status_worker(state, job_id):
@@ -3768,8 +3893,6 @@ def live_status_worker(state, job_id):
         )
     except Exception as exc:
         state.update_job(job_id, state="failed", message="端口状态读取失败", error=str(exc))
-    finally:
-        state.operation_lock.release()
 
 
 def meaningful_sdk_errors(output):
@@ -4142,25 +4265,33 @@ def mac_repair_watchdog(state, poll_seconds=1, settle_seconds=3, startup_delay=1
                 audit_after = now + settle_seconds
             previous = current
             if audit_after is not None and now >= audit_after:
-                if not state.operation_lock.acquire(False):
-                    time.sleep(poll_seconds)
-                    continue
-                try:
-                    repaired = repair_mismatched_dynamic_macs(state.config)
-                    if repaired:
-                        summary = ", ".join(
-                            f'{item["mac"]}/FID {item["fid"]} '
-                            f'{item["dmac_port"]}->{item["cache_port"]}'
-                            for item in repaired
-                        )
-                        print(f"MAC repair: relearned {summary}", flush=True)
-                finally:
-                    state.operation_lock.release()
+                state.start_operation(
+                    "mac-repair",
+                    mac_repair_worker,
+                    priority=15,
+                    coalesce_key="mac-repair",
+                )
                 audit_after = None
         except Exception as exc:
             print(f"MAC repair audit skipped: {exc}", flush=True)
             audit_after = time.monotonic() + 5
         time.sleep(poll_seconds)
+
+
+def mac_repair_worker(state, job_id):
+    try:
+        state.update_job(job_id, state="running", message="核对动态 MAC 表")
+        repaired = repair_mismatched_dynamic_macs(state.config)
+        if repaired:
+            summary = ", ".join(
+                f'{item["mac"]}/FID {item["fid"]} '
+                f'{item["dmac_port"]}->{item["cache_port"]}'
+                for item in repaired
+            )
+            print(f"MAC repair: relearned {summary}", flush=True)
+        state.update_job(job_id, state="done", message="动态 MAC 表核对完成")
+    except Exception as exc:
+        state.update_job(job_id, state="failed", message="动态 MAC 表核对失败", error=str(exc))
 
 
 def parse_fdb(output):
@@ -4197,8 +4328,6 @@ def fdb_worker(state, job_id):
         )
     except Exception as exc:
         state.update_job(job_id, state="failed", message="MAC 地址表读取失败", error=str(exc))
-    finally:
-        state.operation_lock.release()
 
 
 def parse_lane_diagnostic(output, endpoint):
@@ -4272,60 +4401,6 @@ def lane_diagnostic_worker(state, job_id, logical):
         )
     except Exception as exc:
         state.update_job(job_id, state="failed", message="Lane 诊断失败", error=str(exc))
-    finally:
-        state.operation_lock.release()
-
-
-def optics_diagnostic_script():
-    lines = [
-        "# expert",
-        "my $pe_chip = $self->{FT}->{CHIP};",
-        "my $pe_mux_saved = [(0) x 1];",
-        "my $pe_mux_read_status = $pe_chip->fmI2cWriteRead(0, 0x58, $pe_mux_saved, 0, 1);",
-        "for my $pe_item ([1, 0x01], [2, 0x02]) {",
-        "    my ($pe_mpo, $pe_mux) = @$pe_item;",
-        "    my $pe_mux_data = [$pe_mux];",
-        "    my $pe_select_status = $pe_chip->fmI2cWriteRead(0, 0x58, $pe_mux_data, 1, 0);",
-        "    my $pe_temperature_data = [0x16, 0x00];",
-        "    my $pe_temperature_status = $pe_chip->fmI2cWriteRead(0, 0x50, $pe_temperature_data, 1, 2);",
-        '    printf("PE31625G24DIRA_OPTICS_TEMPERATURE mpo=%d status=%d raw=%02X%02X\\n", $pe_mpo, $pe_temperature_status, $pe_temperature_data->[0], $pe_temperature_data->[1]);',
-        "    my $pe_page = [0x7f];",
-        "    my $pe_page_status = $pe_chip->fmI2cWriteRead(0, 0x40, $pe_page, 1, 1);",
-        "    my $pe_saved_page = $pe_page->[0];",
-        "    my $pe_page_one = [0x7f, 0x01];",
-        "    $pe_page_status = $pe_chip->fmI2cWriteRead(0, 0x40, $pe_page_one, 2, 0) if $pe_page_status == 0;",
-        "    my $pe_data = [0xce, (0) x 24];",
-        "    my $pe_read_status = $pe_page_status == 0 ? $pe_chip->fmI2cWriteRead(0, 0x40, $pe_data, 1, 24) : $pe_page_status;",
-        "    my $pe_restore_page = [0x7f, $pe_saved_page];",
-        "    my $pe_restore_page_status = $pe_chip->fmI2cWriteRead(0, 0x40, $pe_restore_page, 2, 0);",
-        '    printf("PE31625G24DIRA_OPTICS mpo=%d mux=%d select_status=%d page_status=%d read_status=%d restore_page_status=%d raw=", $pe_mpo, $pe_mux, $pe_select_status, $pe_page_status, $pe_read_status, $pe_restore_page_status);',
-        '    printf("%02X", $pe_data->[$_]) for (0 .. 23);',
-        '    print "\\n";',
-        "    my $pe_identity_page = [0x7f];",
-        "    my $pe_identity_page_status = $pe_chip->fmI2cWriteRead(0, 0x50, $pe_identity_page, 1, 1);",
-        "    my $pe_identity_saved_page = $pe_identity_page->[0];",
-        "    my $pe_identity_page_zero = [0x7f, 0x00];",
-        "    $pe_identity_page_status = $pe_chip->fmI2cWriteRead(0, 0x50, $pe_identity_page_zero, 2, 0) if $pe_identity_page_status == 0;",
-        "    select(undef, undef, undef, 0.03);",
-        "    my $pe_identity_hex = '';",
-        "    my $pe_identity_read_status = 0;",
-        "    for (my $pe_offset = 0x80; $pe_offset < 0x100; $pe_offset += 12) {",
-        "        my $pe_count = 0x100 - $pe_offset;",
-        "        $pe_count = 12 if $pe_count > 12;",
-        "        my $pe_identity_data = [$pe_offset, (0) x ($pe_count - 1)];",
-        "        my $pe_chunk_status = $pe_chip->fmI2cWriteRead(0, 0x50, $pe_identity_data, 1, $pe_count);",
-        "        $pe_identity_read_status = $pe_chunk_status if $pe_chunk_status != 0;",
-        "        $pe_identity_hex .= join('', map { sprintf('%02X', $_) } @{$pe_identity_data});",
-        "    }",
-        "    my $pe_identity_restore = [0x7f, $pe_identity_saved_page];",
-        "    my $pe_identity_restore_status = $pe_chip->fmI2cWriteRead(0, 0x50, $pe_identity_restore, 2, 0);",
-        '    printf("PE31625G24DIRA_OPTICS_IDENTITY mpo=%d page_status=%d read_status=%d restore_page_status=%d raw=%s\\n", $pe_mpo, $pe_identity_page_status, $pe_identity_read_status, $pe_identity_restore_status, $pe_identity_hex);',
-        "}",
-        "if ($pe_mux_read_status != 0) { $pe_mux_saved->[0] = 0x01; }",
-        "$pe_chip->fmI2cWriteRead(0, 0x58, $pe_mux_saved, 1, 0);",
-        f'print "{OPTICS_DIAGNOSTIC_COMPLETE_MARKER}\\n";',
-    ]
-    return "\n".join(lines) + "\n"
 
 
 def decode_optics_identity(raw):
@@ -4360,9 +4435,6 @@ def decode_optics_identity(raw):
 
 
 def parse_optics_diagnostic(output):
-    temperatures = {
-        module["mpo"]: module for module in parse_optics_temperatures(output)["modules"]
-    }
     identities = {}
     for match in OPTICS_IDENTITY_RE.finditer(output):
         statuses = [int(match.group(index)) for index in range(2, 5)]
@@ -4410,16 +4482,6 @@ def parse_optics_diagnostic(output):
                 "restore_page": statuses[3],
             },
         }
-        module.update(
-            temperatures.get(
-                module["mpo"],
-                {
-                    "temperature_c": None,
-                    "temperature_raw": None,
-                    "temperature_status": None,
-                },
-            )
-        )
         module["identity"] = identities.get(module["mpo"], {"readable": False})
         modules.append(module)
     if len(modules) != 2:
@@ -4436,33 +4498,44 @@ def refresh_optics_cache(state):
         timeout=30,
     )
     result = parse_optics_diagnostic(output)
-    optics = parse_optics_temperatures(output)
-    optics["sampled"] = result["sampled"]
     with state.telemetry_lock:
         state.optics_cache = {"state": "ready", **result}
-        state.sensor_cache["optics"] = optics
     return result
 
 
-def optics_cache_worker(state, retry_seconds=30):
-    while True:
-        if not state.operation_lock.acquire(False):
-            time.sleep(retry_seconds)
-            continue
-        try:
-            refresh_optics_cache(state)
-            return
-        except Exception as exc:
-            with state.telemetry_lock:
-                state.optics_cache = {
-                    "state": "error",
-                    "sampled": int(time.time()),
-                    "modules": [],
-                    "error": str(exc),
-                }
-        finally:
-            state.operation_lock.release()
-        time.sleep(retry_seconds)
+def schedule_optics_cache(state, delay=0, retry_seconds=30):
+    def enqueue():
+        state.start_operation(
+            "optics-cache",
+            optics_cache_job_worker,
+            retry_seconds,
+            priority=20,
+            coalesce_key="optics-cache",
+        )
+
+    if delay <= 0:
+        enqueue()
+        return
+    timer = threading.Timer(delay, enqueue)
+    timer.daemon = True
+    timer.start()
+
+
+def optics_cache_job_worker(state, job_id, retry_seconds=30):
+    try:
+        state.update_job(job_id, state="running", message="读取光引擎信息")
+        refresh_optics_cache(state)
+        state.update_job(job_id, state="done", message="光引擎信息已缓存")
+    except Exception as exc:
+        with state.telemetry_lock:
+            state.optics_cache = {
+                "state": "error",
+                "sampled": int(time.time()),
+                "modules": [],
+                "error": str(exc),
+            }
+        state.update_job(job_id, state="failed", message="光引擎信息读取失败", error=str(exc))
+        schedule_optics_cache(state, delay=retry_seconds, retry_seconds=retry_seconds)
 
 
 def fan_apply_worker(state, job_id, value):
@@ -4515,8 +4588,6 @@ def fan_apply_worker(state, job_id, value):
             rollback_error=rollback_error,
             backup=backup,
         )
-    finally:
-        state.operation_lock.release()
 
 
 def validate_port_admin(body, parsed):
@@ -4633,8 +4704,6 @@ def port_admin_worker(state, job_id, scope, target, enabled):
             except Exception:
                 pass
         state.update_job(job_id, state="failed", message="端口开关应用失败", error=str(exc))
-    finally:
-        state.operation_lock.release()
 
 
 def vlan_apply_worker(state, job_id, value):
@@ -4711,8 +4780,6 @@ def vlan_apply_worker(state, job_id, value):
             rollback_error=rollback_error,
             backup=backup,
         )
-    finally:
-        state.operation_lock.release()
 
 
 def run_l2_configuration(config, parsed, previous, value):
@@ -4766,8 +4833,6 @@ def l2_apply_worker(state, job_id, value):
             error=str(exc),
             rollback_ok=rollback_ok,
         )
-    finally:
-        state.operation_lock.release()
 
 
 def lldp_refresh_worker(state, job_id):
@@ -4801,8 +4866,6 @@ def lldp_refresh_worker(state, job_id):
         )
     except Exception as exc:
         state.update_job(job_id, state="failed", message="邻居识别失败", error=str(exc))
-    finally:
-        state.operation_lock.release()
 
 
 def loop_block_worker(state, job_id, endpoint_key_value):
@@ -4834,8 +4897,6 @@ def loop_block_worker(state, job_id, endpoint_key_value):
         state.update_job(job_id, state="done", message="疑似环路端口已关闭")
     except Exception as exc:
         state.update_job(job_id, state="failed", message="环路端口隔离失败", error=str(exc))
-    finally:
-        state.operation_lock.release()
 
 
 def loop_protection_watchdog(state, poll_seconds=2):
@@ -4868,7 +4929,13 @@ def loop_protection_watchdog(state, poll_seconds=2):
                 rate = (count - old[1]) / (now - old[0])
                 strikes[key] = strikes.get(key, 0) + 1 if rate >= threshold else 0
                 if strikes[key] >= 3:
-                    if state.start_operation("loop-protection", loop_block_worker, key):
+                    if state.start_operation(
+                        "loop-protection",
+                        loop_block_worker,
+                        key,
+                        priority=10,
+                        coalesce_key=f"loop-protection:{key}",
+                    ):
                         strikes[key] = 0
         except Exception as exc:
             print(f"Loop protection sample skipped: {exc}", flush=True)
@@ -5077,6 +5144,12 @@ class Handler(BaseHTTPRequestHandler):
                 return self.serve_static("api-client.js", "application/javascript; charset=utf-8")
             if path == "/controls.js":
                 return self.serve_static("controls.js", "application/javascript; charset=utf-8")
+            if path == "/dashboard.js":
+                return self.serve_static("dashboard.js", "application/javascript; charset=utf-8")
+            if path == "/diagnostics.js":
+                return self.serve_static("diagnostics.js", "application/javascript; charset=utf-8")
+            if path == "/maintenance.js":
+                return self.serve_static("maintenance.js", "application/javascript; charset=utf-8")
             if path == "/api/state":
                 payload = platform_payload(self.app_state.config)
                 _, parsed = parse_platform(self.app_state.config["platform_persistent"])
@@ -5318,7 +5391,7 @@ def main():
     threading.Thread(target=mac_repair_watchdog, args=(state,), daemon=True).start()
     threading.Thread(target=state.lldp_monitor.run, daemon=True).start()
     threading.Thread(target=loop_protection_watchdog, args=(state,), daemon=True).start()
-    threading.Thread(target=optics_cache_worker, args=(state,), daemon=True).start()
+    schedule_optics_cache(state)
     print(f"PE31625G24DIRA Switch Manager {APP_VERSION} listening on http://{listen}:{port}")
     server.serve_forever()
 
