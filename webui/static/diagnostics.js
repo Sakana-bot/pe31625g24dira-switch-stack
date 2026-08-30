@@ -19,13 +19,12 @@ function renderLaneDiagnostic(result) {
 
 function renderOpticsIdentity(section, identity, temperatureC) {
   const fields = [
-    ['厂商', identity?.vendor],
-    ['型号', identity?.part_number],
-    ['序列号', identity?.serial],
-    ['生产日期', identity?.date_code],
+    ['厂商', identity?.vendor || '—'],
+    ['型号', identity?.part_number || '—'],
+    ['序列号', identity?.serial || '—'],
+    ['生产日期', identity?.date_code || '—'],
     ['光引擎内部温度', Number.isFinite(temperatureC) ? `${temperatureC.toFixed(2)} °C` : '—'],
-  ].filter(([, value]) => value);
-  if (!fields.length) return;
+  ];
   const list = document.createElement('div');
   list.className = 'sensor-list optics-identity';
   fields.forEach(([label, value]) => {
@@ -70,7 +69,7 @@ function renderOpticsTelemetry(optics, details) {
   const renderKey = `${optics.sampled || 0}:${details?.sampled || 0}:${details?.state || 'pending'}`;
   if (renderKey === ui.opticsRenderKey) return;
   ui.opticsRenderKey = renderKey;
-  if (details?.state === 'ready') renderOptics(mergeOpticsTemperatures(details, optics), true);
+  if (details && ['ready', 'partial'].includes(details.state)) renderOptics(mergeOpticsTemperatures(details, optics), true);
   else renderOptics({ sampled: optics.sampled, modules: optics.modules || [] }, false, details);
 }
 

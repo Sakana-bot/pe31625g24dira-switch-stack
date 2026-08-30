@@ -4489,6 +4489,35 @@ def parse_optics_diagnostic(output):
     return {"sampled": int(time.time()), "modules": modules}
 
 
+def preserve_optics_identities(current, previous=None):
+    """Retain the last readable identity while recording a partial fresh sample."""
+    result = dict(current or {})
+    previous_by_mpo = {
+        int(module["mpo"]): module for module in (previous or {}).get("modules", [])
+    }
+    modules = []
+    fresh = 0
+    for current_module in result.get("modules", []):
+        module = dict(current_module)
+        identity = dict(module.get("identity") or {})
+        identity_fresh = bool(identity.get("readable"))
+        if identity_fresh:
+            fresh += 1
+        else:
+            previous_identity = dict(
+                previous_by_mpo.get(int(module["mpo"]), {}).get("identity") or {}
+            )
+            if previous_identity.get("readable"):
+                identity = previous_identity
+                module["identity_stale"] = True
+        module["identity"] = identity
+        module["identity_fresh"] = identity_fresh
+        modules.append(module)
+    result["modules"] = modules
+    result["state"] = "ready" if modules and fresh == len(modules) else "partial"
+    return result
+
+
 def refresh_optics_cache(state):
     output = run_temporary_testpoint(
         state.config,
@@ -4497,9 +4526,11 @@ def refresh_optics_cache(state):
         OPTICS_DIAGNOSTIC_COMPLETE_MARKER,
         timeout=30,
     )
-    result = parse_optics_diagnostic(output)
     with state.telemetry_lock:
-        state.optics_cache = {"state": "ready", **result}
+        previous = state.optics_cache
+    result = preserve_optics_identities(parse_optics_diagnostic(output), previous)
+    with state.telemetry_lock:
+        state.optics_cache = result
     return result
 
 
@@ -4522,20 +4553,30 @@ def schedule_optics_cache(state, delay=0, retry_seconds=30):
 
 
 def optics_cache_job_worker(state, job_id, retry_seconds=30):
+    retry_seconds = max(30, min(int(retry_seconds), 300))
+    next_retry = min(retry_seconds * 2, 300)
     try:
         state.update_job(job_id, state="running", message="读取光引擎信息")
-        refresh_optics_cache(state)
-        state.update_job(job_id, state="done", message="光引擎信息已缓存")
+        result = refresh_optics_cache(state)
+        if result["state"] == "partial":
+            state.update_job(job_id, state="done", message="部分光引擎信息已缓存，后台将重试")
+            schedule_optics_cache(
+                state, delay=retry_seconds, retry_seconds=next_retry
+            )
+        else:
+            state.update_job(job_id, state="done", message="光引擎信息已缓存")
     except Exception as exc:
         with state.telemetry_lock:
+            previous = state.optics_cache
+            retained = list(previous.get("modules", []))
             state.optics_cache = {
-                "state": "error",
+                "state": "partial" if retained else "error",
                 "sampled": int(time.time()),
-                "modules": [],
+                "modules": retained,
                 "error": str(exc),
             }
         state.update_job(job_id, state="failed", message="光引擎信息读取失败", error=str(exc))
-        schedule_optics_cache(state, delay=retry_seconds, retry_seconds=retry_seconds)
+        schedule_optics_cache(state, delay=retry_seconds, retry_seconds=next_retry)
 
 
 def fan_apply_worker(state, job_id, value):
