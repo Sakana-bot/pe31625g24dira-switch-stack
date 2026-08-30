@@ -104,6 +104,16 @@ class Handler(BaseHTTPRequestHandler):
                 "system_settings": {
                     "hostname": "pe31625-preview",
                     "timezone": "Asia/Shanghai",
+                    "timezones": [
+                        "America/Los_Angeles",
+                        "America/New_York",
+                        "Asia/Hong_Kong",
+                        "Asia/Shanghai",
+                        "Asia/Singapore",
+                        "Asia/Tokyo",
+                        "Europe/London",
+                        "UTC",
+                    ],
                 },
             }
             return self.send_bytes(
@@ -392,6 +402,7 @@ class Handler(BaseHTTPRequestHandler):
             payload = {
                 "hostname": body.get("hostname", "pe31625-preview"),
                 "timezone": body.get("timezone", "Asia/Shanghai"),
+                "timezones": ["Asia/Shanghai", "Asia/Tokyo", "Europe/London", "UTC"],
             }
             return self.send_bytes(json.dumps(payload).encode("utf-8"), "application/json; charset=utf-8")
         if self.path in ("/api/logout", "/api/login"):

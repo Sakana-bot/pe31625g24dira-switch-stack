@@ -1,7 +1,7 @@
 'use strict';
 
 export function createMaintenance(ctx) {
-  const { ui, $, api, showToast, formatBytes } = ctx;
+  const { ui, $, api, showToast, formatBytes, syncSelect } = ctx;
   const pollJob = (...args) => ctx.pollJob(...args);
   const runOperation = (...args) => ctx.runOperation(...args);
   const showJob = (...args) => ctx.showJob(...args);
@@ -95,6 +95,7 @@ async function saveSystemSettings(event) {
     });
     $('#system-hostname').value = value.hostname;
     $('#system-timezone').value = value.timezone;
+    syncSelect($('#system-timezone'));
     showToast('系统设置已保存', 'success');
   } catch (error) {
     showToast(error.message);

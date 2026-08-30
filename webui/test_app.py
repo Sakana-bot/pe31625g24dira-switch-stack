@@ -126,6 +126,30 @@ class SystemManagementTests(unittest.TestCase):
                 )
             run.assert_not_called()
 
+    def test_available_timezones_uses_system_iana_database(self):
+        original_root = APP.TIMEZONE_ROOT
+        try:
+            with tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                (root / "Asia").mkdir()
+                (root / "Europe").mkdir()
+                (root / "Asia" / "Shanghai").write_bytes(b"tzif")
+                (root / "Europe" / "London").write_bytes(b"tzif")
+                (root / "UTC").write_bytes(b"tzif")
+                (root / "zone.tab").write_text(
+                    "CN\t+3114+12128\tAsia/Shanghai\nGB\t+513030-0000731\tEurope/London\n",
+                    encoding="utf-8",
+                )
+                APP.TIMEZONE_ROOT = root
+                APP.available_timezones.cache_clear()
+                self.assertEqual(
+                    APP.available_timezones(),
+                    ["Asia/Shanghai", "Europe/London", "UTC"],
+                )
+        finally:
+            APP.TIMEZONE_ROOT = original_root
+            APP.available_timezones.cache_clear()
+
     def test_upgrade_archive_rejects_traversal(self):
         stream = io.BytesIO()
         with tarfile.open(fileobj=stream, mode="w:gz") as archive:

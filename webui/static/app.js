@@ -709,7 +709,17 @@ async function loadState(resetDraft = true) {
   $('#account-username').value = state.username || '';
   if (state.system_settings) {
     $('#system-hostname').value = state.system_settings.hostname || '';
-    $('#system-timezone').value = state.system_settings.timezone || 'UTC';
+    const timezone = $('#system-timezone');
+    const fragment = document.createDocumentFragment();
+    (state.system_settings.timezones || [state.system_settings.timezone || 'UTC']).forEach((name) => {
+      const option = document.createElement('option');
+      option.value = name;
+      option.textContent = name;
+      fragment.append(option);
+    });
+    timezone.replaceChildren(fragment);
+    timezone.value = state.system_settings.timezone || 'UTC';
+    syncSelect(timezone);
   }
   renderPorts(); renderStatsPortSelect(); renderVlans(); renderL2(); renderFanCurve();
 }

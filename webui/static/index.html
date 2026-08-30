@@ -345,17 +345,7 @@
               <div class="panel-head"><h2>系统与界面</h2></div>
               <form id="system-settings-form" class="settings-form system-settings-form" novalidate>
                 <label>主机名<input id="system-hostname" maxlength="63" pattern="[A-Za-z0-9][A-Za-z0-9.-]{0,62}" required></label>
-                <label>系统时区<input id="system-timezone" list="timezone-options" maxlength="128" placeholder="Asia/Shanghai" required></label>
-                <datalist id="timezone-options">
-                  <option value="Asia/Shanghai"></option>
-                  <option value="Asia/Hong_Kong"></option>
-                  <option value="Asia/Tokyo"></option>
-                  <option value="Asia/Singapore"></option>
-                  <option value="Europe/London"></option>
-                  <option value="America/New_York"></option>
-                  <option value="America/Los_Angeles"></option>
-                  <option value="UTC"></option>
-                </datalist>
+                <label>系统时区<select id="system-timezone" required><option value="">正在读取…</option></select></label>
                 <label>明暗模式<select id="theme-mode"><option value="system">跟随系统</option><option value="light">浅色</option><option value="dark">深色</option></select></label>
                 <label>流量单位<select id="traffic-unit"><option value="bits">bit/s</option><option value="bytes">B/s</option></select></label>
                 <div class="form-actions"><button id="system-settings-submit" class="button primary" type="submit">保存</button></div>

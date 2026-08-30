@@ -3154,8 +3154,32 @@ def set_system_timezone(value):
         raise
 
 
+@functools.lru_cache(maxsize=1)
+def available_timezones():
+    zones = {"UTC"}
+    for table_name in ("zone.tab", "zone1970.tab"):
+        try:
+            lines = (TIMEZONE_ROOT / table_name).read_text(encoding="utf-8").splitlines()
+        except OSError:
+            continue
+        for line in lines:
+            if not line or line.startswith("#"):
+                continue
+            fields = line.split("\t")
+            if len(fields) >= 3 and valid_timezone(fields[2]):
+                zones.add(fields[2])
+    current = current_timezone()
+    if valid_timezone(current):
+        zones.add(current)
+    return sorted(zones, key=lambda item: (item.split("/", 1)[0], item.casefold()))
+
+
 def system_settings_payload():
-    return {"hostname": os.uname().nodename, "timezone": current_timezone()}
+    return {
+        "hostname": os.uname().nodename,
+        "timezone": current_timezone(),
+        "timezones": available_timezones(),
+    }
 
 
 def apply_system_settings(body):
