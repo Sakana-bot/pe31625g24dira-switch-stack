@@ -17,6 +17,7 @@
           <button class="nav-group-toggle" type="button" aria-expanded="true"><svg class="app-icon" aria-hidden="true" viewBox="0 0 24 24"><path d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2"/></svg><span>状态</span><svg class="app-icon nav-chevron" aria-hidden="true" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></button>
           <div class="nav-children">
             <button class="nav-item active" data-page="overview" type="button">概览</button>
+            <button class="nav-item" data-page="monitoring" type="button">监控</button>
             <button class="nav-item" data-page="sensors" type="button">传感器</button>
             <button class="nav-item" data-page="logs" type="button">日志</button>
           </div>
@@ -103,6 +104,25 @@
                 <div id="active-port-list" class="active-port-list"><span class="muted">正在读取…</span></div>
               </section>
             </div>
+          </div>
+        </section>
+
+        <section id="page-monitoring" class="page">
+          <div class="monitor-summary-grid">
+            <article><small>CPU 使用率</small><strong id="monitor-cpu">—</strong><span id="monitor-cpu-note">正在采样</span></article>
+            <article><small>内存使用率</small><strong id="monitor-memory">—</strong><span id="monitor-memory-note">—</span></article>
+            <article><small>交换接收</small><strong id="monitor-rx">—</strong><span>全部活动端口</span></article>
+            <article><small>交换发送</small><strong id="monitor-tx">—</strong><span>全部活动端口</span></article>
+          </div>
+          <div class="monitor-panel-grid">
+            <section class="panel monitor-panel">
+              <div class="panel-head"><div><h2>系统资源</h2><p>CPU 与内存使用率</p></div><span class="panel-meta">当前会话 · 最近 5 分钟</span></div>
+              <div id="monitor-resource-chart" class="monitor-chart"><span class="muted">正在采样…</span></div>
+            </section>
+            <section class="panel monitor-panel">
+              <div class="panel-head"><div><h2>交换流量</h2><p>全部逻辑端口收发速率汇总</p></div><span class="panel-meta">当前会话 · 最近 5 分钟</span></div>
+              <div id="monitor-traffic-chart" class="monitor-chart"><span class="muted">正在采样…</span></div>
+            </section>
           </div>
         </section>
 

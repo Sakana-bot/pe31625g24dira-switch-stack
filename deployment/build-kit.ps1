@@ -108,6 +108,7 @@ try {
         'login.html',
         'login.js',
         'maintenance.js',
+        'monitoring.js',
         'setup.html',
         'setup.js',
         'style.css',

@@ -47,7 +47,7 @@ const speedLabel = (speed) => `${speed / 1000}G`;
 const clone = (value) => JSON.parse(JSON.stringify(value));
 const escapeHtml = (value) => String(value).replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]);
 const TELEMETRY_INTERVAL_SECONDS = 1;
-const PAGE_PATHS = { overview: '/overview', sensors: '/sensors', logs: '/logs', ports: '/ports', stats: '/statistics', vlans: '/vlans', network: '/network', system: '/system', cooling: '/cooling', maintenance: '/backup', settings: '/settings' };
+const PAGE_PATHS = { overview: '/overview', monitoring: '/monitoring', sensors: '/sensors', logs: '/logs', ports: '/ports', stats: '/statistics', vlans: '/vlans', network: '/network', system: '/system', cooling: '/cooling', maintenance: '/backup', settings: '/settings' };
 const PATH_PAGES = Object.fromEntries(Object.entries(PAGE_PATHS).map(([page, path]) => [path, page]));
 const api = createApiClient(() => ui.csrf);
 
@@ -80,7 +80,7 @@ function setPage(name, updateHistory = true) {
     group.classList.toggle('open', active);
     group.querySelector('.nav-group-toggle').setAttribute('aria-expanded', String(group.classList.contains('open')));
   });
-  const labels = { overview: '概览', sensors: '传感器', logs: '日志', ports: '端口', stats: '端口统计', vlans: 'VLAN', network: '网络功能', system: '系统信息', cooling: '散热', maintenance: '备份与升级', settings: '设置' };
+  const labels = { overview: '概览', monitoring: '监控', sensors: '传感器', logs: '日志', ports: '端口', stats: '端口统计', vlans: 'VLAN', network: '网络功能', system: '系统信息', cooling: '散热', maintenance: '备份与升级', settings: '设置' };
   $('#page-title').textContent = labels[name];
   $('#top-page-title').textContent = labels[name];
   if (name === 'logs' && !ui.logsLoaded) loadLogs();

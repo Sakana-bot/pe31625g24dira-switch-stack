@@ -5167,6 +5167,7 @@ class Handler(BaseHTTPRequestHandler):
             if path in (
                 "/",
                 "/overview",
+                "/monitoring",
                 "/sensors",
                 "/system",
                 "/cooling",
@@ -5187,6 +5188,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.serve_static("controls.js", "application/javascript; charset=utf-8")
             if path == "/dashboard.js":
                 return self.serve_static("dashboard.js", "application/javascript; charset=utf-8")
+            if path == "/monitoring.js":
+                return self.serve_static("monitoring.js", "application/javascript; charset=utf-8")
             if path == "/diagnostics.js":
                 return self.serve_static("diagnostics.js", "application/javascript; charset=utf-8")
             if path == "/maintenance.js":

@@ -1053,6 +1053,7 @@ class FirstRunHttpTests(unittest.TestCase):
         self.assertIn(b"enhanceSelects", payload)
         for module_name, marker in (
             ("dashboard.js", b"createDashboard"),
+            ("monitoring.js", b"recordMonitoringSample"),
             ("diagnostics.js", b"createDiagnostics"),
             ("maintenance.js", b"createMaintenance"),
         ):

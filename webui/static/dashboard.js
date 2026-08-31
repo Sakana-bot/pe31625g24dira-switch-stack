@@ -1,5 +1,7 @@
 'use strict';
 
+import { recordMonitoringSample } from '/monitoring.js';
+
 export function createDashboard(ctx) {
   const {
     ui, $, api, speedLabel, formatBytes, formatRate, formatBitRate,
@@ -98,6 +100,7 @@ function renderTelemetry(data) {
   }
   ui.pendingTelemetry = null;
   ui.telemetry = data;
+  recordMonitoringSample(data, formatRate, formatBytes);
   if (data.port_status && data.port_status.state === 'ready') {
     ui.live = data.port_status.ports;
     renderPortLinks();

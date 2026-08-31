@@ -348,6 +348,7 @@ class Handler(BaseHTTPRequestHandler):
         page_routes = (
             "/",
             "/overview",
+            "/monitoring",
             "/sensors",
             "/system",
             "/cooling",
@@ -368,6 +369,7 @@ class Handler(BaseHTTPRequestHandler):
                 "/api-client.js": ("api-client.js", "application/javascript; charset=utf-8"),
                 "/controls.js": ("controls.js", "application/javascript; charset=utf-8"),
                 "/dashboard.js": ("dashboard.js", "application/javascript; charset=utf-8"),
+                "/monitoring.js": ("monitoring.js", "application/javascript; charset=utf-8"),
                 "/diagnostics.js": ("diagnostics.js", "application/javascript; charset=utf-8"),
                 "/login.js": ("login.js", "application/javascript; charset=utf-8"),
                 "/maintenance.js": ("maintenance.js", "application/javascript; charset=utf-8"),
