@@ -114,6 +114,7 @@ class Handler(BaseHTTPRequestHandler):
                         "Europe/London",
                         "UTC",
                     ],
+                    "telemetry_history": {"enabled": True, "retention_days": 30},
                 },
             }
             return self.send_bytes(
@@ -127,6 +128,67 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_bytes(json.dumps(payload).encode("utf-8"), "application/json; charset=utf-8")
         if self.path == "/api/health":
             payload = {"version": APP.APP_VERSION, "status": "healthy", "service": "active", "uio_ready": True, "testpoint_ready": True}
+            return self.send_bytes(json.dumps(payload).encode("utf-8"), "application/json; charset=utf-8")
+        if self.path.startswith("/api/telemetry/history"):
+            now = int(time.time())
+            samples = [
+                {
+                    "timestamp": now - (30 - index),
+                    "cpu": 12 + index % 5,
+                    "memory": 25 + index % 3,
+                    "memoryUsed": (512 + index) * 1024 * 1024,
+                    "rx": 11000000 + index * 50000,
+                    "tx": 7000000 + index * 40000,
+                }
+                for index in range(31)
+            ]
+            payload = {"range_seconds": 900, "resolution_seconds": 1, "samples": samples}
+            return self.send_bytes(json.dumps(payload).encode("utf-8"), "application/json; charset=utf-8")
+        if self.path.startswith("/api/telemetry/traffic-usage"):
+            dates = [time.strftime("%Y-%m-%d", time.localtime(time.time() - day * 86400)) for day in range(13, -1, -1)]
+            payload = {
+                "enabled": True, "retention_days": 30,
+                "selected_port": "epl0.lane0" if "port=" in self.path else None,
+                "summary": {
+                    "today": {"rx_bytes": 18_400_000_000, "tx_bytes": 11_200_000_000},
+                    "yesterday": {"rx_bytes": 34_100_000_000, "tx_bytes": 27_800_000_000},
+                    "month": {"rx_bytes": 814_000_000_000, "tx_bytes": 624_000_000_000},
+                    "total": {"rx_bytes": 1_860_000_000_000, "tx_bytes": 1_420_000_000_000},
+                },
+                "series": {
+                    "five_minute": [
+                        {"label": time.strftime("%m-%d %H:%M", time.localtime(time.time() - (35 - index) * 300)),
+                         "rx_bytes": (index % 9 + 2) * 85_000_000, "tx_bytes": (index % 6 + 1) * 64_000_000,
+                         "average_bps": (index % 8 + 2) * 2_400_000}
+                        for index in range(36)
+                    ],
+                    "hourly": [
+                        {"label": time.strftime("%m-%d %H:00", time.localtime(time.time() - (31 - index) * 3600)),
+                         "rx_bytes": (index % 12 + 3) * 920_000_000, "tx_bytes": (index % 8 + 2) * 610_000_000,
+                         "average_bps": (index % 10 + 4) * 3_200_000}
+                        for index in range(32)
+                    ],
+                    "daily": [
+                        {"label": date, "rx_bytes": (index + 4) * 2_100_000_000,
+                         "tx_bytes": (index + 2) * 1_500_000_000, "average_bps": (index + 2) * 420_000}
+                        for index, date in enumerate(dates)
+                    ],
+                    "monthly": [
+                        {"label": "2026-07", "rx_bytes": 684_000_000_000, "tx_bytes": 510_000_000_000, "average_bps": 4_460_000},
+                        {"label": "2026-08", "rx_bytes": 814_000_000_000, "tx_bytes": 624_000_000_000, "average_bps": 5_370_000},
+                        {"label": "2026-09", "rx_bytes": 262_000_000_000, "tx_bytes": 197_000_000_000, "average_bps": 5_900_000},
+                    ],
+                },
+                "top_days": [
+                    {"label": date, "rx_bytes": (index + 4) * 2_100_000_000,
+                     "tx_bytes": (index + 2) * 1_500_000_000, "average_bps": (index + 2) * 420_000}
+                    for index, date in list(enumerate(dates))[-10:][::-1]
+                ],
+                "ports": [
+                    {"key": "epl0.lane0", "logical": 1, "epl": 0, "lane": 0, "rx_bytes": 14_000_000_000, "tx_bytes": 8_000_000_000},
+                    {"key": "epl0.lane1", "logical": 2, "epl": 0, "lane": 1, "rx_bytes": 4_400_000_000, "tx_bytes": 3_200_000_000},
+                ],
+            }
             return self.send_bytes(json.dumps(payload).encode("utf-8"), "application/json; charset=utf-8")
         if self.path == "/api/telemetry":
             _, parsed = APP.parse_platform(
@@ -142,6 +204,9 @@ class Handler(BaseHTTPRequestHandler):
                     "rx_link_up": index == 0,
                     "epl": physical["epl"],
                     "lane": port["lane"] or 0,
+                    "speed": "{}G".format(port["speed"] // 1000),
+                    "admin": "UP",
+                    "type": port["ethernet_mode"],
                     "pcs": 6,
                     "raw": "0x00000000",
                     "rx_bps": 12500000 if index == 0 else 0,
@@ -405,8 +470,11 @@ class Handler(BaseHTTPRequestHandler):
                 "hostname": body.get("hostname", "pe31625-preview"),
                 "timezone": body.get("timezone", "Asia/Shanghai"),
                 "timezones": ["Asia/Shanghai", "Asia/Tokyo", "Europe/London", "UTC"],
+                "telemetry_history": body.get("telemetry_history", {"enabled": True, "retention_days": 30}),
             }
             return self.send_bytes(json.dumps(payload).encode("utf-8"), "application/json; charset=utf-8")
+        if self.path == "/api/system/settings/telemetry/clear":
+            return self.send_bytes(b'{"ok":true,"message":"monitoring history cleared"}', "application/json; charset=utf-8")
         if self.path in ("/api/logout", "/api/login"):
             return self.send_bytes(b'{"ok":true}', "application/json; charset=utf-8")
         self.send_error(404)

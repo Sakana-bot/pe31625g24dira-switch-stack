@@ -2333,7 +2333,20 @@ def parse_vpd_identity(data, subsystem_vendor=None):
     )
     model = model.upper() if model else None
     vpd_version = next((value for value in strings if re.fullmatch(r"\d{4}", value)), None)
-    serial = next((value for value in strings if re.fullmatch(r"S\d{10,}", value)), None)
+    # Silicom VPD serials are not limited to the older S-prefixed format.
+    # For example, production boards with the same 0490 VPD revision also use
+    # F-prefixed numeric serials.  Keep the product string out explicitly and
+    # accept the VPD's long, upper-case identifier instead of guessing a prefix.
+    serial = next(
+        (
+            value
+            for value in strings
+            if value.upper() != model
+            and re.fullmatch(r"[A-Z][A-Z0-9-]{9,}", value)
+            and any(character.isdigit() for character in value)
+        ),
+        None,
+    )
     vendor = "Silicom" if (subsystem_vendor or "").lower() == "0x1374" else None
 
     hardware_family = None
@@ -2711,6 +2724,27 @@ def telemetry_payload(state):
     }
 
 
+def telemetry_collector(state, interval=1.0):
+    """Collect one shared hardware snapshot even when no browser is open."""
+    while True:
+        started = time.monotonic()
+        try:
+            maybe_refresh_sensors(state)
+            state.record_telemetry(telemetry_payload(state))
+        except Exception as exc:
+            print(f"Telemetry sample skipped: {exc}", flush=True)
+        time.sleep(max(0.1, interval - (time.monotonic() - started)))
+
+
+def current_telemetry_payload(state):
+    payload = state.latest_telemetry()
+    if payload is not None:
+        return payload
+    payload = telemetry_payload(state)
+    state.record_telemetry(payload)
+    return payload
+
+
 def parse_switch_sensors(output):
     temperatures = []
     voltages = []
@@ -3071,9 +3105,9 @@ def run_systemctl(action):
     return subprocess.call(["/bin/systemctl", action, SERVICE])
 
 
-def validate_poweroff_request(body):
+def validate_poweroff_request(body, action="关闭系统"):
     if not isinstance(body, dict) or body.get("confirm") is not True:
-        raise ApiError(400, "请确认关闭系统")
+        raise ApiError(400, "请确认{}".format(action))
     return True
 
 
@@ -3148,6 +3182,9 @@ def set_system_timezone(value):
         os.symlink(target, temporary)
         os.replace(temporary, "/etc/localtime")
         atomic_write("/etc/timezone", f"{value}\n", 0o644)
+        tzset = getattr(time, "tzset", None)
+        if tzset is not None:
+            tzset()
     except Exception:
         with suppress(OSError):
             temporary.unlink()
@@ -3174,15 +3211,18 @@ def available_timezones():
     return sorted(zones, key=lambda item: (item.split("/", 1)[0], item.casefold()))
 
 
-def system_settings_payload():
-    return {
+def system_settings_payload(state=None):
+    payload = {
         "hostname": os.uname().nodename,
         "timezone": current_timezone(),
         "timezones": available_timezones(),
     }
+    if state is not None:
+        payload["telemetry_history"] = state.telemetry_persistence.settings()
+    return payload
 
 
-def apply_system_settings(body):
+def apply_system_settings(body, state=None):
     if not isinstance(body, dict):
         raise ApiError(400, "系统设置无效")
     hostname = str(body.get("hostname", "")).strip()
@@ -3209,7 +3249,38 @@ def apply_system_settings(body):
         )
         if result.returncode:
             raise ApiError(500, clean_service_log(result.stderr) or "系统设置保存失败")
-    return system_settings_payload()
+    if state is not None and "telemetry_history" in body:
+        history = body["telemetry_history"]
+        if not isinstance(history, dict) or not isinstance(history.get("enabled"), bool):
+            raise ApiError(400, "历史数据设置无效")
+        try:
+            retention_days = int(history.get("retention_days", 30))
+        except (TypeError, ValueError):
+            raise ApiError(400, "历史数据保留时间无效") from None
+        if retention_days not in {7, 30, 90}:
+            raise ApiError(400, "历史数据保留时间仅支持 7、30 或 90 天")
+        if not state.config_path:
+            raise ApiError(500, "未配置设置文件路径")
+        with state.config_lock:
+            updated = dict(state.config)
+            updated["telemetry_persistence"] = history["enabled"]
+            updated["telemetry_retention_days"] = retention_days
+            atomic_write(state.config_path, json.dumps(updated, indent=2, sort_keys=True) + "\n")
+            state.config = updated
+        state.telemetry_persistence.configure(history["enabled"], retention_days)
+    return system_settings_payload(state)
+
+
+def telemetry_history_payload(state, seconds):
+    memory = state.telemetry_history.query(seconds)
+    persisted = state.telemetry_persistence.history(seconds)
+    if persisted is None:
+        return memory
+    samples = {item["timestamp"]: item for item in persisted}
+    samples.update({item["timestamp"]: item for item in memory["samples"]})
+    memory["samples"] = [samples[key] for key in sorted(samples)]
+    memory["persistent"] = True
+    return memory
 
 
 def verify_kit_manifest(kit_root):
@@ -3583,30 +3654,17 @@ def upgrade_job_status():
     }
 
 
-def poweroff_worker(delay=2.0):
-    """Let the HTTP response reach the browser before asking PID 1 to power off."""
+def system_power_worker(state, job_id, action, delay=2.0):
+    """Run system power actions after earlier serialized hardware work finishes."""
+    labels = {"poweroff": "关机", "reboot": "重启"}
+    if action not in labels:
+        raise RuntimeError("unsupported system power action")
+    label = labels[action]
+    state.update_job(job_id, state="running", message="正在准备系统{}".format(label))
     time.sleep(delay)
-    subprocess.call(["/bin/systemctl", "poweroff"])
-
-
-def schedule_poweroff(delay=2.0):
-    thread = threading.Thread(target=poweroff_worker, args=(delay,))
-    thread.daemon = True
-    thread.start()
-    return thread
-
-
-def reboot_worker(delay=2.0):
-    """Let the HTTP response reach the browser before asking PID 1 to reboot."""
-    time.sleep(delay)
-    subprocess.call(["/bin/systemctl", "reboot"])
-
-
-def schedule_reboot(delay=2.0):
-    thread = threading.Thread(target=reboot_worker, args=(delay,))
-    thread.daemon = True
-    thread.start()
-    return thread
+    if subprocess.call(["/bin/systemctl", action]) != 0:
+        raise RuntimeError("systemctl {} failed".format(action))
+    state.update_job(job_id, state="done", message="系统{}命令已提交".format(label))
 
 
 def factory_reset_worker(state, job_id):
@@ -5116,8 +5174,10 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
-    def start_operation(self, kind, target, *args):
-        job = self.app_state.start_operation(kind, target, *args)
+    def start_operation(self, kind, target, *args, priority=0, coalesce_key=None):
+        job = self.app_state.start_operation(
+            kind, target, *args, priority=priority, coalesce_key=coalesce_key
+        )
         if job is None:
             raise ApiError(429, "SDK 操作队列已满，请稍后重试")
         return self.json_response(202, job)
@@ -5200,7 +5260,7 @@ class Handler(BaseHTTPRequestHandler):
                 payload["l2"] = l2_payload(self.app_state.config, parsed, self.app_state)
                 payload["csrf"] = self.session["csrf"]
                 payload["username"] = self.session["username"]
-                payload["system_settings"] = system_settings_payload()
+                payload["system_settings"] = system_settings_payload(self.app_state)
                 return self.json_response(200, payload)
             if path == "/api/health":
                 return self.json_response(
@@ -5217,7 +5277,22 @@ class Handler(BaseHTTPRequestHandler):
                 )
             if path == "/api/telemetry":
                 maybe_refresh_sensors(self.app_state)
-                return self.json_response(200, telemetry_payload(self.app_state))
+                return self.json_response(200, current_telemetry_payload(self.app_state))
+            if path == "/api/telemetry/history":
+                query = parse_qs(urlparse(self.path).query)
+                try:
+                    seconds = int(query.get("range", ["900"])[0])
+                except (TypeError, ValueError):
+                    raise ApiError(400, "监控时间范围无效") from None
+                return self.json_response(200, telemetry_history_payload(self.app_state, seconds))
+            if path == "/api/telemetry/traffic-usage":
+                query = parse_qs(urlparse(self.path).query)
+                port_key = query.get("port", [None])[0]
+                if port_key is not None and not re.fullmatch(r"epl\d+\.lane\d+", port_key):
+                    raise ApiError(400, "端口标识无效")
+                return self.json_response(
+                    200, self.app_state.telemetry_persistence.traffic_statistics(port_key)
+                )
             if path == "/api/system/upgrade/status":
                 return self.json_response(200, upgrade_job_status())
             if path.startswith("/api/jobs/"):
@@ -5269,7 +5344,14 @@ class Handler(BaseHTTPRequestHandler):
                     [("Set-Cookie", cookie)],
                 )
             if path == "/api/system/settings":
-                return self.json_response(200, apply_system_settings(self.body_json()))
+                return self.json_response(200, apply_system_settings(self.body_json(), self.app_state))
+            if path == "/api/system/settings/telemetry/clear":
+                self.body_json()
+                try:
+                    self.app_state.telemetry_persistence.clear()
+                except RuntimeError as exc:
+                    raise ApiError(500, str(exc)) from None
+                return self.json_response(200, {"ok": True, "message": "监控历史已清除"})
             if path == "/api/system/upgrade/upload":
                 if self.app_state.operation_busy():
                     raise ApiError(409, "硬件配置或 SDK 读取正在进行")
@@ -5306,18 +5388,14 @@ class Handler(BaseHTTPRequestHandler):
                 )
             if path == "/api/system/poweroff":
                 validate_poweroff_request(self.body_json())
-                if self.app_state.operation_busy():
-                    raise ApiError(409, "硬件配置或 SDK 读取正在进行，请完成后再关机")
-                self.json_response(202, {"ok": True, "message": "系统将在 2 秒后开始安全关机"})
-                schedule_poweroff()
-                return
+                return self.start_operation(
+                    "poweroff", system_power_worker, "poweroff"
+                )
             if path == "/api/system/reboot":
-                validate_poweroff_request(self.body_json())
-                if self.app_state.operation_busy():
-                    raise ApiError(409, "硬件配置或 SDK 读取正在进行，请完成后再重启")
-                self.json_response(202, {"ok": True, "message": "系统将在 2 秒后重启"})
-                schedule_reboot()
-                return
+                validate_poweroff_request(self.body_json(), "重启系统")
+                return self.start_operation(
+                    "reboot", system_power_worker, "reboot"
+                )
             if path == "/api/system/factory-reset":
                 body = self.body_json()
                 if not isinstance(body, dict) or body.get("confirm") is not True:
@@ -5435,6 +5513,7 @@ def main():
     threading.Thread(target=mac_repair_watchdog, args=(state,), daemon=True).start()
     threading.Thread(target=state.lldp_monitor.run, daemon=True).start()
     threading.Thread(target=loop_protection_watchdog, args=(state,), daemon=True).start()
+    threading.Thread(target=telemetry_collector, args=(state,), daemon=True).start()
     schedule_optics_cache(state)
     print(f"PE31625G24DIRA Switch Manager {APP_VERSION} listening on http://{listen}:{port}")
     server.serve_forever()

@@ -676,7 +676,7 @@ async function toggleMpo(mpo) {
 const featureContext = {
   ui, $, api, clone, escapeHtml, speedLabel, showToast,
   formatBytes, formatRate, formatBitRate, formatEthernetLink,
-  formatCount, formatUptime, loadPercent, syncSelect,
+  formatCount, formatUptime, loadPercent, syncSelect, setSwitch,
   pollJob, runOperation, showJob, hideJob,
 };
 const diagnostics = createDiagnostics(featureContext);
@@ -687,7 +687,7 @@ const maintenance = createMaintenance(featureContext);
 Object.assign(featureContext, maintenance);
 
 const {
-  renderPortStatistics, hasTextSelection, renderTelemetry, loadTelemetry, setTelemetryInterval,
+  renderPortStatistics, hasTextSelection, renderTelemetry, loadTelemetry, setTelemetryInterval, initializeMonitoring,
   linkBadge, renderPortLinks, readDiagnostic, readLaneDiagnostic, renderFdb,
   logout, loadLogs, setLogInterval, saveAccount, saveSystemSettings,
   exportConfiguration, selectConfigurationFile, importConfiguration,
@@ -720,6 +720,11 @@ async function loadState(resetDraft = true) {
     timezone.replaceChildren(fragment);
     timezone.value = state.system_settings.timezone || 'UTC';
     syncSelect(timezone);
+    const history = state.system_settings.telemetry_history || { enabled: false, retention_days: 30 };
+    setSwitch($('#telemetry-history-enabled'), Boolean(history.enabled));
+    $('#telemetry-retention').value = String(history.retention_days || 30);
+    $('#telemetry-retention').disabled = !history.enabled;
+    syncSelect($('#telemetry-retention'));
   }
   renderPorts(); renderStatsPortSelect(); renderVlans(); renderL2(); renderFanCurve();
 }
@@ -792,8 +797,14 @@ $('#traffic-unit').addEventListener('change', (event) => {
   window.localStorage.setItem(TRAFFIC_UNIT_STORAGE_KEY, ui.trafficUnit);
   if (ui.telemetry) renderTelemetry(ui.telemetry);
 });
+$('#telemetry-history-enabled').addEventListener('click', (event) => { const enabled = event.currentTarget.getAttribute('aria-checked') !== 'true'; setSwitch(event.currentTarget, enabled); $('#telemetry-retention').disabled = !enabled; syncSelect($('#telemetry-retention')); });
 $('#account-form').addEventListener('submit', saveAccount);
 $('#system-settings-form').addEventListener('submit', saveSystemSettings);
+$('#monitoring-settings-form').addEventListener('submit', saveSystemSettings);
+$('#telemetry-history-clear').addEventListener('click', async () => {
+  if (!window.confirm('确认清除全部监控历史和流量统计？此操作无法撤销。')) return;
+  try { const value = await api('/api/system/settings/telemetry/clear', { method: 'POST', body: '{}' }); window.dispatchEvent(new CustomEvent('telemetry-history-changed')); showToast(value.message || '监控历史已清除', 'success'); } catch (error) { showToast(error.message); }
+});
 $('#config-export').addEventListener('click', exportConfiguration);
 $('#config-import-file').addEventListener('change', selectConfigurationFile);
 $('#config-import').addEventListener('click', importConfiguration);
@@ -813,5 +824,5 @@ enhanceNumberInputs(document);
   const initialPage = pageFromLocation();
   setPage(initialPage, false);
   if (window.location.pathname !== PAGE_PATHS[initialPage]) window.history.replaceState({ page: initialPage }, '', PAGE_PATHS[initialPage]);
-  try { await loadState(); await loadTelemetry(); setTelemetryInterval(TELEMETRY_INTERVAL_SECONDS); ui.healthTimer = window.setInterval(loadServiceHealth, 10000); setLogInterval(); } catch (error) { showToast(`加载失败：${error.message}`); }
+  try { await loadState(); await initializeMonitoring(api, ui.state); await loadTelemetry(); setTelemetryInterval(TELEMETRY_INTERVAL_SECONDS); ui.healthTimer = window.setInterval(loadServiceHealth, 10000); setLogInterval(); } catch (error) { showToast(`加载失败：${error.message}`); }
 })();

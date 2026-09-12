@@ -54,10 +54,10 @@ function positionMenu(control) {
   const availableBelow = window.innerHeight - rect.bottom - margin;
   const availableAbove = rect.top - margin;
   const maxHeight = Math.max(120, Math.min(320, Math.max(availableBelow, availableAbove)));
-  const width = Math.max(rect.width, 120);
+  const width = Math.min(window.innerWidth - margin * 2, Math.max(rect.width, menu.scrollWidth + 2, 120));
   menu.style.width = `${width}px`;
   menu.style.maxHeight = `${maxHeight}px`;
-  menu.style.left = `${Math.min(rect.left, window.innerWidth - width - margin)}px`;
+  menu.style.left = `${Math.max(margin, Math.min(rect.left, window.innerWidth - width - margin))}px`;
   if (availableBelow >= Math.min(menu.scrollHeight, maxHeight) || availableBelow >= availableAbove) {
     menu.style.top = `${rect.bottom + 5}px`;
     menu.style.bottom = 'auto';

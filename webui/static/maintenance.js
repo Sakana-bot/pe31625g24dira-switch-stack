@@ -1,7 +1,7 @@
 'use strict';
 
 export function createMaintenance(ctx) {
-  const { ui, $, api, showToast, formatBytes, syncSelect } = ctx;
+  const { ui, $, api, showToast, formatBytes, syncSelect, setSwitch } = ctx;
   const pollJob = (...args) => ctx.pollJob(...args);
   const runOperation = (...args) => ctx.runOperation(...args);
   const showJob = (...args) => ctx.showJob(...args);
@@ -84,19 +84,30 @@ async function saveAccount(event) {
 async function saveSystemSettings(event) {
   event.preventDefault();
   if (!event.currentTarget.checkValidity()) return showToast('请输入有效的主机名和系统时区');
-  const button = $('#system-settings-submit'); button.disabled = true;
+  const monitoring = event.currentTarget.id === 'monitoring-settings-form';
+  const button = $(monitoring ? '#monitoring-settings-submit' : '#system-settings-submit'); button.disabled = true;
   try {
     const value = await api('/api/system/settings', {
       method: 'POST',
       body: JSON.stringify({
         hostname: $('#system-hostname').value.trim(),
         timezone: $('#system-timezone').value.trim(),
+        telemetry_history: {
+          enabled: $('#telemetry-history-enabled').getAttribute('aria-checked') === 'true',
+          retention_days: Number($('#telemetry-retention').value),
+        },
       }),
     });
     $('#system-hostname').value = value.hostname;
     $('#system-timezone').value = value.timezone;
     syncSelect($('#system-timezone'));
-    showToast('系统设置已保存', 'success');
+    const history = value.telemetry_history || { enabled: false, retention_days: 30 };
+    setSwitch($('#telemetry-history-enabled'), Boolean(history.enabled));
+    $('#telemetry-retention').value = String(history.retention_days || 30);
+    $('#telemetry-retention').disabled = !history.enabled;
+    syncSelect($('#telemetry-retention'));
+    window.dispatchEvent(new CustomEvent('telemetry-history-changed'));
+    showToast(monitoring ? '监控设置已保存' : '系统设置已保存', 'success');
   } catch (error) {
     showToast(error.message);
   } finally {
@@ -291,7 +302,6 @@ async function monitorUpgrade(unit) {
 }
 
 function openPoweroffModal() {
-  if (ui.busy) return showToast('硬件配置或诊断正在进行，请完成后再关机');
   const modal = $('#poweroff-modal');
   $('#poweroff-confirm-content').hidden = false; $('#poweroff-progress').hidden = true;
   $('#poweroff-submit').disabled = false; modal.hidden = false;
@@ -303,7 +313,7 @@ function closePoweroffModal() {
 }
 
 function openPowerMenu() {
-  if (!ui.busy && !ui.poweringOff && !ui.rebooting) $('#power-menu-modal').hidden = false;
+  if (!ui.poweringOff && !ui.rebooting) $('#power-menu-modal').hidden = false;
 }
 
 function closePowerMenu() {
@@ -324,10 +334,14 @@ function choosePoweroff() {
 async function poweroff() {
   const submit = $('#poweroff-submit'); submit.disabled = true;
   try {
-    await api('/api/system/poweroff', { method: 'POST', body: JSON.stringify({ confirm: true }) });
+    const job = await api('/api/system/poweroff', { method: 'POST', body: JSON.stringify({ confirm: true }) });
     ui.poweringOff = true;
     if (ui.telemetryTimer) window.clearInterval(ui.telemetryTimer);
     $('#poweroff-confirm-content').hidden = true; $('#poweroff-progress').hidden = false;
+    $('#poweroff-progress-title').textContent = job.queue_ahead ? '关机已排队' : '系统正在关机';
+    $('#poweroff-progress-description').textContent = job.queue_ahead
+      ? '正在等待当前硬件操作完成，随后将安全关机。请勿立即拔电。'
+      : '正在停止服务并同步磁盘。页面断开后等待 30 秒再切断 12V。';
   } catch (error) {
     submit.disabled = false;
     showToast(error.message);
@@ -341,12 +355,12 @@ function closeRebootModal() {
 async function reboot() {
   const submit = $('#reboot-submit'); submit.disabled = true;
   try {
-    await api('/api/system/reboot', { method: 'POST', body: JSON.stringify({ confirm: true }) });
+    const job = await api('/api/system/reboot', { method: 'POST', body: JSON.stringify({ confirm: true }) });
     ui.rebooting = true;
     if (ui.telemetryTimer) window.clearInterval(ui.telemetryTimer);
     if (ui.logTimer) window.clearInterval(ui.logTimer);
     $('#reboot-modal').hidden = true;
-    showJob('系统正在重启');
+    showJob(job.queue_ahead ? '重启已排队，正在等待当前硬件操作完成' : '系统正在重启');
     const started = Date.now();
     let observedDown = false;
     await new Promise((resolve) => window.setTimeout(resolve, 4000));

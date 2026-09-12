@@ -108,21 +108,95 @@
         </section>
 
         <section id="page-monitoring" class="page">
-          <div class="monitor-summary-grid">
-            <article><small>CPU 使用率</small><strong id="monitor-cpu">—</strong><span id="monitor-cpu-note">正在采样</span></article>
-            <article><small>内存使用率</small><strong id="monitor-memory">—</strong><span id="monitor-memory-note">—</span></article>
-            <article><small>交换接收</small><strong id="monitor-rx">—</strong><span>全部活动端口</span></article>
-            <article><small>交换发送</small><strong id="monitor-tx">—</strong><span>全部活动端口</span></article>
+          <nav class="page-tabs monitor-view-tabs" aria-label="监控内容">
+            <button class="active" type="button" data-monitor-view="realtime">实时监控</button>
+            <button type="button" data-monitor-view="usage">流量统计</button>
+          </nav>
+          <div id="monitor-realtime-view">
+          <div class="monitor-toolbar">
+            <nav class="page-tabs monitor-range-tabs" aria-label="监控时间范围">
+              <button class="active" type="button" data-monitor-range="900">15 分钟</button>
+              <button type="button" data-monitor-range="3600">1 小时</button>
+              <button type="button" data-monitor-range="21600">6 小时</button>
+              <button type="button" data-monitor-range="86400">24 小时</button>
+              <button type="button" data-monitor-range="604800">7 天</button>
+            </nav>
           </div>
           <div class="monitor-panel-grid">
             <section class="panel monitor-panel">
-              <div class="panel-head"><div><h2>系统资源</h2><p>CPU 与内存使用率</p></div><span class="panel-meta">当前会话 · 最近 5 分钟</span></div>
-              <div id="monitor-resource-chart" class="monitor-chart"><span class="muted">正在采样…</span></div>
+              <div class="panel-head"><h2>CPU 使用率</h2><span class="panel-meta monitor-range-label">最近 15 分钟</span></div>
+              <div id="monitor-cpu-chart" class="monitor-chart"><span class="muted">正在采样…</span></div>
             </section>
             <section class="panel monitor-panel">
-              <div class="panel-head"><div><h2>交换流量</h2><p>全部逻辑端口收发速率汇总</p></div><span class="panel-meta">当前会话 · 最近 5 分钟</span></div>
-              <div id="monitor-traffic-chart" class="monitor-chart"><span class="muted">正在采样…</span></div>
+              <div class="panel-head"><h2>内存使用率</h2><span class="panel-meta monitor-range-label">最近 15 分钟</span></div>
+              <div id="monitor-memory-chart" class="monitor-chart"><span class="muted">正在采样…</span></div>
             </section>
+            <section class="panel monitor-panel">
+              <div class="panel-head"><div><h2>交换接收</h2><p>全部逻辑端口汇总</p></div><span class="panel-meta monitor-range-label">最近 15 分钟</span></div>
+              <div id="monitor-rx-chart" class="monitor-chart"><span class="muted">正在采样…</span></div>
+            </section>
+            <section class="panel monitor-panel">
+              <div class="panel-head"><div><h2>交换发送</h2><p>全部逻辑端口汇总</p></div><span class="panel-meta monitor-range-label">最近 15 分钟</span></div>
+              <div id="monitor-tx-chart" class="monitor-chart"><span class="muted">正在采样…</span></div>
+            </section>
+          </div>
+          </div>
+          <div id="monitor-usage-view" hidden>
+            <section id="usage-disabled" class="panel usage-empty" hidden>
+              <strong>流量统计尚未启用</strong>
+              <span>在“设置 → 监控与统计”中开启“保存监控历史”后开始统计。</span>
+            </section>
+            <section id="usage-error" class="panel usage-empty" hidden>
+              <strong>流量统计读取失败</strong>
+              <span id="usage-error-message">请稍后重试。</span>
+            </section>
+            <div id="usage-content" hidden>
+              <div class="usage-toolbar"><label>统计范围<select id="usage-port"><option value="">全部端口</option></select></label><button id="usage-refresh" class="button secondary compact" type="button">刷新</button></div>
+              <nav class="page-tabs usage-period-tabs" aria-label="流量统计粒度">
+                <button class="active" type="button" data-usage-view="overview">概览</button>
+                <button type="button" data-usage-view="five_minute">5 分钟</button>
+                <button type="button" data-usage-view="hourly">小时</button>
+                <button type="button" data-usage-view="daily">按日</button>
+                <button type="button" data-usage-view="monthly">按月</button>
+                <button type="button" data-usage-view="peaks">峰值</button>
+              </nav>
+              <div id="usage-overview-view" class="usage-subview">
+                <div class="usage-summary-grid">
+                  <section class="panel usage-summary"><small>今日</small><strong id="usage-today">—</strong></section>
+                  <section class="panel usage-summary"><small>昨日</small><strong id="usage-yesterday">—</strong></section>
+                  <section class="panel usage-summary"><small>本月</small><strong id="usage-month">—</strong></section>
+                  <section class="panel usage-summary"><small id="usage-total-label">保留数据累计</small><strong id="usage-total">—</strong></section>
+                </div>
+                <div class="monitor-panel-grid usage-detail-grid">
+                  <section class="panel monitor-panel monitor-panel-wide">
+                    <div class="panel-head"><div><h2>今日流量走势</h2><p>按小时汇总</p></div></div>
+                    <div id="usage-overview-chart" class="usage-chart"><span class="muted">暂无记录</span></div>
+                  </section>
+                  <section id="usage-ranking-panel" class="panel monitor-panel monitor-panel-wide">
+                    <div class="panel-head"><div><h2>今日端口排行</h2><p>按今日收发总量排序</p></div></div>
+                    <div id="usage-port-list" class="usage-port-list"><span class="muted">暂无记录</span></div>
+                  </section>
+                </div>
+              </div>
+              <div id="usage-series-view" class="usage-subview" hidden>
+                <section class="panel monitor-panel">
+                  <div class="panel-head"><div><h2 id="usage-series-title">流量明细</h2><p id="usage-series-description"></p></div></div>
+                  <div id="usage-series-chart" class="usage-chart"><span class="muted">暂无记录</span></div>
+                  <div class="usage-table-wrap">
+                    <table class="usage-table"><thead><tr><th>时间</th><th>接收</th><th>发送</th><th>合计</th><th>平均速率</th></tr></thead><tbody id="usage-series-rows"></tbody></table>
+                  </div>
+                </section>
+              </div>
+              <div id="usage-peaks-view" class="usage-subview" hidden>
+                <div id="usage-peak-cards" class="usage-peak-grid"></div>
+                <section class="panel monitor-panel">
+                  <div class="panel-head"><div><h2>流量最高日期</h2><p>当前保留期内前 10 项</p></div></div>
+                  <div class="usage-table-wrap">
+                    <table class="usage-table"><thead><tr><th>日期</th><th>接收</th><th>发送</th><th>合计</th><th>平均速率</th></tr></thead><tbody id="usage-top-day-rows"></tbody></table>
+                  </div>
+                </section>
+              </div>
+            </div>
           </div>
         </section>
 
@@ -267,7 +341,7 @@
             <article><small>发送丢弃</small><strong id="stat-tx-discards">—</strong></article>
           </section>
           <section class="panel">
-            <div class="panel-head stats-toolbar"><h2>RMON</h2><label>端口<select id="stats-port"></select></label></div>
+            <div class="panel-head stats-toolbar"><h2>RMON</h2><select id="stats-port" aria-label="统计端口"></select></div>
             <div class="stats-section"><h3>接收</h3><div id="stats-rx" class="stat-list"></div></div>
             <div class="stats-section"><h3>发送</h3><div id="stats-tx" class="stat-list"></div></div>
             <div class="stats-section"><h3>帧长分布</h3><div class="length-columns"><div><h4>接收</h4><div id="stats-rx-length" class="stat-list compact"></div></div><div><h4>发送</h4><div id="stats-tx-length" class="stat-list compact"></div></div></div></div>
@@ -372,6 +446,14 @@
               </form>
             </section>
             <section class="panel settings-panel">
+              <div class="panel-head"><h2>监控与统计</h2></div>
+              <form id="monitoring-settings-form" class="settings-form monitoring-settings-form" novalidate>
+                <label class="history-setting">保存监控历史<span class="setting-switch-row"><button id="telemetry-history-enabled" class="toggle-switch" type="button" role="switch" aria-checked="false"><i></i></button><span>默认关闭；开启后按分钟记录</span></span></label>
+                <label id="telemetry-retention-label">历史保留时间<select id="telemetry-retention"><option value="7">7 天</option><option value="30">30 天</option><option value="90">90 天</option></select></label>
+                <div class="form-actions monitoring-actions"><button id="telemetry-history-clear" class="button secondary" type="button">清除历史数据</button><button id="monitoring-settings-submit" class="button primary" type="submit">保存</button></div>
+              </form>
+            </section>
+            <section class="panel settings-panel">
               <div class="panel-head"><h2>管理员账户</h2></div>
               <form id="account-form" class="account-form" novalidate>
                 <label>用户名<input id="account-username" name="username" autocomplete="username" maxlength="64" pattern="[A-Za-z0-9_.-]{3,64}" required></label>
@@ -458,8 +540,8 @@
         <div class="confirm-actions"><button id="poweroff-cancel" class="button quiet" type="button">取消</button><button id="poweroff-submit" class="button danger solid" type="button">安全关机</button></div>
       </div>
       <div id="poweroff-progress" class="poweroff-progress" hidden>
-        <h2>系统正在关机</h2>
-        <p>正在停止服务并同步磁盘。页面断开后等待 30 秒再切断 12V。</p>
+        <h2 id="poweroff-progress-title">系统正在关机</h2>
+        <p id="poweroff-progress-description">正在停止服务并同步磁盘。页面断开后等待 30 秒再切断 12V。</p>
         <span><i class="spinner"></i>请勿立即拔电</span>
       </div>
     </section>

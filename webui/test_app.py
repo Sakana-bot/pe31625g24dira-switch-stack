@@ -3,10 +3,12 @@ import hashlib
 import io
 import json
 import os
+import sqlite3
 import struct
 import tempfile
 import tarfile
 import threading
+import time
 import unittest
 from http.client import HTTPConnection
 from pathlib import Path
@@ -20,6 +22,90 @@ BASE = Path(HERE, "reference_original_6x100.cfg").read_text(encoding="utf-8")
 
 
 class SystemManagementTests(unittest.TestCase):
+    def test_telemetry_history_aggregates_five_second_samples(self):
+        history = APP.State({}).telemetry_history
+
+        def payload(timestamp, cpu):
+            return {
+                "sampled": timestamp,
+                "cpu": {"usage_percent": cpu},
+                "memory": {"usage_percent": 25, "used": 512 * 1024 * 1024},
+                "port_status": {
+                    "traffic": {
+                        "rx_bps": 1000,
+                        "tx_bps": 500,
+                    }
+                },
+            }
+
+        now = int(time.time())
+        now -= now % 5
+        history.record(payload(now, 10))
+        history.record(payload(now + 1, 30))
+        result = history.query(900)
+        self.assertEqual(result["resolution_seconds"], 5)
+        self.assertEqual(result["samples"][-1]["cpu"], 20)
+
+    def test_optional_telemetry_persistence_records_minute_traffic(self):
+        with tempfile.TemporaryDirectory() as directory:
+            database = os.path.join(directory, "telemetry.sqlite3")
+            state = APP.State({
+                "telemetry_database": database,
+                "telemetry_persistence": True,
+                "telemetry_retention_days": 30,
+            })
+
+            def payload(timestamp, rx, tx):
+                return {
+                    "sampled": timestamp,
+                    "cpu": {"usage_percent": 10},
+                    "memory": {"usage_percent": 25, "used": 512},
+                    "port_status": {"traffic": {"rx_bps": 80, "tx_bps": 40}, "ports": {
+                        "1": {"epl": 0, "lane": 0, "statistics": {
+                            "rx": {"good_bytes": rx}, "tx": {"good_bytes": tx},
+                        }},
+                        "2": {"epl": 0, "lane": 1, "statistics": {
+                            "rx": {"good_bytes": 500}, "tx": {"good_bytes": 500},
+                        }},
+                    }},
+                }
+
+            now = int(time.time())
+            now -= now % 60
+            state.record_telemetry(payload(now, 1000, 2000))
+            state.record_telemetry(payload(now + 20, 1300, 2400))
+            state.record_telemetry(payload(now + 60, 1500, 2700))
+            usage = state.telemetry_persistence.traffic_statistics()
+            self.assertNotIn("error", usage, usage)
+            self.assertEqual(usage["summary"]["total"], {"rx_bytes": 300, "tx_bytes": 400})
+            self.assertEqual(usage["series"]["hourly"][-1]["rx_bytes"], 300)
+            self.assertEqual(usage["series"]["hourly"][-1]["tx_bytes"], 400)
+            self.assertEqual(usage["series"]["five_minute"][-1]["rx_bytes"], 300)
+            self.assertEqual(usage["top_days"][0]["rx_bytes"], 300)
+            self.assertEqual(usage["ports"][0]["key"], "epl0.lane0")
+            self.assertEqual(len(usage["ports"]), 1)
+            selected = state.telemetry_persistence.traffic_statistics("epl0.lane0")
+            self.assertEqual(selected["selected_port"], "epl0.lane0")
+            self.assertEqual(selected["summary"]["total"], {"rx_bytes": 300, "tx_bytes": 400})
+            connection = sqlite3.connect(database)
+            try:
+                connection.execute(
+                    "INSERT INTO traffic_minutes VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (now, "epl0.lane2", 3, 0, 2,
+                     state.telemetry_persistence.MAX_PORT_BYTES_PER_MINUTE + 1, 1),
+                )
+                connection.commit()
+            finally:
+                connection.close()
+            filtered = state.telemetry_persistence.traffic_statistics()
+            self.assertEqual(filtered["summary"]["total"], {"rx_bytes": 300, "tx_bytes": 400})
+            self.assertTrue(os.path.exists(database))
+
+    def test_telemetry_persistence_is_disabled_by_default(self):
+        state = APP.State({})
+        self.assertFalse(state.telemetry_persistence.settings()["enabled"])
+        self.assertEqual(state.telemetry_persistence.traffic_statistics()["summary"], {})
+
     def test_sdk_operations_wait_in_fifo_order(self):
         state = APP.State({})
         first_started = threading.Event()
@@ -126,6 +212,24 @@ class SystemManagementTests(unittest.TestCase):
                 )
             run.assert_not_called()
 
+    def test_setting_timezone_refreshes_process_timezone_cache(self):
+        original_root = APP.TIMEZONE_ROOT
+        try:
+            with tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                (root / "Asia").mkdir()
+                (root / "Asia" / "Shanghai").write_bytes(b"tzif")
+                APP.TIMEZONE_ROOT = root
+                with mock.patch.object(APP.os, "symlink"), mock.patch.object(
+                    APP.os, "replace"
+                ), mock.patch.object(APP, "atomic_write"), mock.patch.object(
+                    APP.time, "tzset", create=True
+                ) as tzset:
+                    APP.set_system_timezone("Asia/Shanghai")
+                tzset.assert_called_once_with()
+        finally:
+            APP.TIMEZONE_ROOT = original_root
+
     def test_available_timezones_uses_system_iana_database(self):
         original_root = APP.TIMEZONE_ROOT
         try:
@@ -231,6 +335,20 @@ class TopologyTests(unittest.TestCase):
         self.assertEqual(identity["serial"], "S916260490015")
         self.assertEqual(identity["hardware_family"], "Silicom B0")
         self.assertEqual(identity["hw_version"], 4)
+
+    def test_vpd_identity_accepts_f_prefixed_board_serial(self):
+        data = (
+            b"\x82\x7d\x00"
+            b"01v00       \x00"
+            + b"\xff" * 32
+            + b"PRDi\x01\x06\x04L\x04\x00"
+            + b"PE31625G24DiRA-MPS\x00\x00"
+            + b"0490"
+            + b"\xff" * 12
+            + b"F214704700739\x00"
+        )
+        identity = APP.parse_vpd_identity(data, "0x1374")
+        self.assertEqual(identity["serial"], "F214704700739")
 
     def test_all_bonded_100(self):
         text, parsed = self.render(lambda group: {"layout": "bonded", "speed": 100000})
@@ -834,6 +952,16 @@ Port           : 4                  4                  4
         self.assertTrue(APP.validate_poweroff_request({"confirm": True}))
         with self.assertRaises(APP.ApiError):
             APP.validate_poweroff_request({"confirm": False})
+
+    def test_system_power_action_uses_serial_operation_worker(self):
+        state = APP.State({})
+        job = state.new_job("poweroff")
+        with mock.patch.object(APP.time, "sleep"), mock.patch.object(
+            APP.subprocess, "call", return_value=0
+        ) as call:
+            APP.system_power_worker(state, job["id"], "poweroff")
+        call.assert_called_once_with(["/bin/systemctl", "poweroff"])
+        self.assertEqual(state.get_job(job["id"])["state"], "done")
 
     def test_service_log_cleanup_removes_testpoint_spinner(self):
         raw = ">> Loading TestPoint Module (\\)\b\b\b(|)\b\b\b(/)\nFATAL: example\n"

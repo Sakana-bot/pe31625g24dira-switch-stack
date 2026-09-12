@@ -1,6 +1,6 @@
 'use strict';
 
-import { recordMonitoringSample } from '/monitoring.js';
+import { initializeMonitoring, recordMonitoringSample } from '/monitoring.js';
 
 export function createDashboard(ctx) {
   const {
@@ -267,5 +267,6 @@ function renderPortLinks() {
     updateLinkBadge,
     linkBadge,
     renderPortLinks,
+    initializeMonitoring,
   };
 }
