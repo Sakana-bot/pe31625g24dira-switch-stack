@@ -1103,9 +1103,9 @@ def tp_script(commands):
 def default_fan_config():
     return {
         "sensor": "fm10840_core",
-        "idle_temperature_c": 35,
+        "idle_temperature_c": 40,
         "load_temperature_c": 70,
-        "critical_temperature_c": 80,
+        "critical_temperature_c": 100,
         "idle_speed_percent": 50,
         "load_speed_percent": 80,
         "response_time_s": 10.9,

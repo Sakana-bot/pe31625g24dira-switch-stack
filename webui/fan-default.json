@@ -1,8 +1,8 @@
 {
-  "critical_temperature_c": 80,
+  "critical_temperature_c": 100,
   "hysteresis_c": 4,
   "idle_speed_percent": 50,
-  "idle_temperature_c": 35,
+  "idle_temperature_c": 40,
   "load_speed_percent": 80,
   "load_temperature_c": 70,
   "response_time_s": 10.9,
